@@ -131,7 +131,7 @@ public function league_tabs($atts): string {
                     data-f360ls-tab="<?php echo esc_attr($id); ?>"
                     role="tab"
                 >
-                    <span><?php echo esc_html($league['title'] ?? $id); ?></span>
+                    <span><?php echo esc_html($this->tab_label((string) ($league['title'] ?? $id))); ?></span>
                     <small><?php echo esc_html($id); ?></small>
                 </button>
             <?php endforeach; ?>
@@ -412,6 +412,12 @@ public function league_tabs($atts): string {
             }
         } else $html = '';
         wp_send_json_success(['html' => $html, 'time' => current_time('mysql')]);
+    }
+
+    private function tab_label(string $title): string {
+        // Saved league titles sometimes use a slug-style hyphen between Persian words.
+        // This affects only the top league selector, not official team names or source data.
+        return preg_replace('/(?<=[\x{0600}-\x{06FF}])\s*-\s*(?=[\x{0600}-\x{06FF}])/u', ' ', trim($title));
     }
 
     private function render_global_header(string $title, int $count, string $subtitle): string {

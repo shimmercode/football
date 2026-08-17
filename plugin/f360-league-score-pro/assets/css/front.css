@@ -2614,3 +2614,16 @@
   background: rgba(100, 116, 139, .35);
   border-radius: 99px;
 }
+
+/* Keep the top league selector fully visible on desktop; scroll only on narrow screens. */
+@media (min-width: 981px) {
+  .f360ls-tabs-modern .f360ls-tabs-sidebar {
+    overflow: visible;
+    flex-wrap: wrap;
+  }
+
+  .f360ls-tabs-modern .f360ls-tabs-sidebar .f360ls-tab {
+    min-width: 0;
+    flex: 1 1 145px;
+  }
+}
