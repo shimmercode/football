@@ -356,7 +356,7 @@ class F360LS_Footballi_Parser {
             'score' => $this->clean_score((string) $score),
             'status' => $this->clean_status((string) $status),
             'status_type' => $this->status_type((string) $status, (string) $score),
-            'date' => $this->match_date((string) $startDate),
+            'date' => $this->match_date((string) ($startDate ?: $status)),
             'home_logo' => $this->normalize_src($this->team_logo($this->value_raw($item, ['home','homeTeam','host','team1','localTeam','home_team']))),
             'away_logo' => $this->normalize_src($this->team_logo($this->value_raw($item, ['away','awayTeam','guest','team2','visitorTeam','away_team']))),
             'href' => $this->normalize_href((string) $href),
@@ -466,7 +466,7 @@ class F360LS_Footballi_Parser {
 
     private function match_from_node(DOMElement $node, DOMXPath $xpath): ?array {
         $startMeta = $xpath->query('.//meta[@itemprop="startDate"]', $node)->item(0);
-        $startDate = ($startMeta instanceof DOMElement) ? $startMeta->getAttribute('content') : '';
+        $startDate = ($startMeta instanceof DOMElement) ? $startMeta->getAttribute('content') : ($node->getAttribute('data-date') ?: $node->getAttribute('data-start-date'));
         $tokens = $this->node_tokens($node);
         $tokens = array_values(array_filter($tokens, fn($t) => !$this->is_meta_token($t)));
         if (count($tokens) < 3) return null;
