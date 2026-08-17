@@ -394,33 +394,33 @@ class F360LS_Admin {
             ['id'=>'ligue-1','title'=>'لیگ 1 فرانسه','url'=>'https://footballi.net/competition/11'],
             ['id'=>'champions-league','title'=>'لیگ قهرمانان اروپا','url'=>'https://footballi.net/competition/3'],
             ['id'=>'europa-league','title'=>'لیگ اروپا','url'=>'https://footballi.net/competition/4'],
-            ['id'=>'conference-league','title'=>'لیگ کنفرانس اروپا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'conference-league','title'=>'لیگ کنفرانس اروپا','url'=>''],
             ['id'=>'elite-asia','title'=>'لیگ نخبگان آسیا','url'=>'https://footballi.net/competition/25'],
             ['id'=>'acl-two','title'=>'لیگ قهرمانان 2 آسیا','url'=>'https://footballi.net/competition/147'],
-            ['id'=>'championship','title'=>'چمپیونشیپ انگلیس','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'bundesliga-2','title'=>'بوندس لیگای 2 آلمان','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'scottish-premiership','title'=>'پریمیرشیپ اسکاتلند','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'primeira-liga','title'=>'لیگ برتر پرتغال','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'eredivisie','title'=>'اردیویسه هلند','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'fa-cup','title'=>'جام حذفی انگلیس','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'championship','title'=>'چمپیونشیپ انگلیس','url'=>''],
+            ['id'=>'bundesliga-2','title'=>'بوندس لیگای 2 آلمان','url'=>''],
+            ['id'=>'scottish-premiership','title'=>'پریمیرشیپ اسکاتلند','url'=>''],
+            ['id'=>'primeira-liga','title'=>'لیگ برتر پرتغال','url'=>''],
+            ['id'=>'eredivisie','title'=>'اردیویسه هلند','url'=>''],
+            ['id'=>'fa-cup','title'=>'جام حذفی انگلیس','url'=>''],
             ['id'=>'efl-cup','title'=>'جام اتحادیه انگلیس','url'=>'https://footballi.net/competition/60'],
-            ['id'=>'dfb-pokal','title'=>'جام حذفی آلمان','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'copa-del-rey','title'=>'جام حذفی اسپانیا','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'coppa-italia','title'=>'جام حذفی ایتالیا','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'coupe-de-france','title'=>'جام حذفی فرانسه','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'dfb-pokal','title'=>'جام حذفی آلمان','url'=>''],
+            ['id'=>'copa-del-rey','title'=>'جام حذفی اسپانیا','url'=>''],
+            ['id'=>'coppa-italia','title'=>'جام حذفی ایتالیا','url'=>''],
+            ['id'=>'coupe-de-france','title'=>'جام حذفی فرانسه','url'=>''],
             ['id'=>'saudi-pro-league','title'=>'لیگ برتر عربستان','url'=>'https://footballi.net/competition/104'],
-            ['id'=>'uae-pro-league','title'=>'لیگ برتر امارات','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'qatar-stars-league','title'=>'لیگ ستارگان قطر','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'world-cup-qualifying-asia','title'=>'انتخابی جام جهانی آسیا','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'world-cup-qualifying-europe','title'=>'انتخابی جام جهانی اروپا','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'world-cup-qualifying-africa','title'=>'انتخابی جام جهانی آفریقا','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'world-cup-qualifying-south-america','title'=>'انتخابی جام جهانی آمریکای جنوبی','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'world-cup-qualifying-north-america','title'=>'انتخابی جام جهانی آمریکای شمالی','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'uae-pro-league','title'=>'لیگ برتر امارات','url'=>''],
+            ['id'=>'qatar-stars-league','title'=>'لیگ ستارگان قطر','url'=>''],
+            ['id'=>'world-cup-qualifying-asia','title'=>'انتخابی جام جهانی آسیا','url'=>''],
+            ['id'=>'world-cup-qualifying-europe','title'=>'انتخابی جام جهانی اروپا','url'=>''],
+            ['id'=>'world-cup-qualifying-africa','title'=>'انتخابی جام جهانی آفریقا','url'=>''],
+            ['id'=>'world-cup-qualifying-south-america','title'=>'انتخابی جام جهانی آمریکای جنوبی','url'=>''],
+            ['id'=>'world-cup-qualifying-north-america','title'=>'انتخابی جام جهانی آمریکای شمالی','url'=>''],
             ['id'=>'uefa-nations-league','title'=>'لیگ ملت های اروپا','url'=>'https://footballi.net/competition/83'],
-            ['id'=>'afc-asian-cup','title'=>'جام ملت های آسیا','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'uefa-euro','title'=>'جام ملت های اروپا','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'africa-cup-of-nations','title'=>'جام ملت های آفریقا','url'=>'https://footballi.net/live-scores'],
-            ['id'=>'copa-america','title'=>'کوپا آمریکا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'afc-asian-cup','title'=>'جام ملت های آسیا','url'=>''],
+            ['id'=>'uefa-euro','title'=>'جام ملت های اروپا','url'=>''],
+            ['id'=>'africa-cup-of-nations','title'=>'جام ملت های آفریقا','url'=>''],
+            ['id'=>'copa-america','title'=>'کوپا آمریکا','url'=>''],
         ];
     }
     private function default_settings(): array {
@@ -534,7 +534,13 @@ class F360LS_Admin {
         $repo = F360LS_Repository::instance();
         $quick = $this->quick_leagues();
         foreach ($quick as $league) {
-            $repo->upsert_league(['id'=>$league['id'],'title'=>$league['title'],'subtitle'=>'','source_url'=>$league['url'],'games_url'=>'https://footballi.net/live-scores','table_url'=>$league['url'] . '/standing','enabled'=>true,'is_plugin_file'=>false]);
+            $existing = $repo->get_league($league['id']) ?: [];
+            $source_url = $league['url'] ?: ($existing['source_url'] ?? '');
+            $games_url = $league['url'] ?: ($existing['games_url'] ?? '');
+            // Never use the global live-scores feed for a league: it mixes competitions.
+            if ($source_url === 'https://footballi.net/live-scores') $source_url = '';
+            if ($games_url === 'https://footballi.net/live-scores') $games_url = '';
+            $repo->upsert_league(['id'=>$league['id'],'title'=>$league['title'],'subtitle'=>'','source_url'=>$source_url,'games_url'=>$games_url,'table_url'=>$source_url ? $source_url . '/standing' : '','enabled'=>true,'is_plugin_file'=>false]);
         }
         $ordered = [];
         foreach ($quick as $league) if ($item = $repo->get_league($league['id'])) $ordered[] = $item;

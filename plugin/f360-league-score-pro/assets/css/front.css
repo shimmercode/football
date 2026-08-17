@@ -2675,3 +2675,23 @@
 .f360ls-league-slider-control { position:absolute; top:50%; z-index:2; transform:translateY(-50%); width:30px; height:30px; border:1px solid var(--line); border-radius:50%; background:var(--surface); color:var(--text); font:inherit; font-size:24px; line-height:24px; cursor:pointer; }
 .f360ls-league-slider-control.is-next { inset-inline-start:10px; }
 .f360ls-league-slider-control.is-prev { inset-inline-end:10px; }
+
+
+/* Controls are outside the scroll track, so they remain fixed while leagues slide. */
+.f360ls-tabs-modern .f360ls-tabs-sidebar {
+  display: block;
+  position: relative;
+  overflow: visible;
+  padding-inline: 48px;
+}
+.f360ls-tabs-modern .f360ls-tabs-slider-track {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: inline mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.f360ls-tabs-modern .f360ls-tabs-slider-track::-webkit-scrollbar { display: none; }
+.f360ls-tabs-modern .f360ls-tabs-slider-track .f360ls-tab { flex: 0 0 clamp(150px, 16vw, 210px); min-width: 150px; margin: 0; scroll-snap-align: center; }
