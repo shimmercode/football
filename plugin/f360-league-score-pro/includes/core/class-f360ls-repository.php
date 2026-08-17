@@ -221,6 +221,9 @@ class F360LS_Repository {
 
         foreach ($urls as $kind => $url) {
             if (!$url || !wp_http_validate_url($url)) continue;
+            // The public live-scores page contains every competition. It must never
+            // be treated as a source for one particular league.
+            if (preg_match('~footballi\.net/live-scores/?(?:[?#].*)?$~i', $url)) continue;
             $html = $this->fetch_url($url);
             if ($html) {
                 $sources[] = ['type' => 'url', 'kind' => $kind, 'url' => $url, 'html' => $html, 'mtime' => time()];

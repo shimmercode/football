@@ -72,6 +72,8 @@ class F360LS_Footballi_Parser {
     private function parse_league_meta(array $configured): array {
         $title = $configured['title'] ?? '';
         $logo = $configured['logo'] ?? '';
+        // Do not reuse Footballi's site/fallback logo as a competition crest.
+        if ($this->is_generic_footballi_logo($logo)) $logo = '';
 
         $dom = $this->dom();
         if ($dom) {
@@ -100,6 +102,13 @@ class F360LS_Footballi_Parser {
             'title' => $title ?: ($configured['title'] ?? 'رقابت'),
             'logo' => $this->normalize_src($logo),
         ];
+    }
+
+    private function is_generic_footballi_logo(string $url): bool {
+        $url = strtolower(trim($url));
+        return $url !== '' && strpos($url, 'footballi.net') !== false
+            && strpos($url, '/competitions/') === false
+            && (strpos($url, 'logo') !== false || strpos($url, 'favicon') !== false || strpos($url, 'brand') !== false);
     }
 
     private function parse_standings_from_json(): array {
