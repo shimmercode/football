@@ -1,0 +1,101 @@
+=== F360 League Score Pro ===
+Contributors: shimmercode
+Requires at least: 5.6
+Requires PHP: 7.4
+Stable tag: 3.9.8
+License: GPLv2 or later
+
+نمایش حرفه‌ای جدول لیگ‌ها، نتایج زنده، بازی‌های امروز، بازی‌های تیم‌ها، فرم تیم‌ها، اخبار و شورت‌کدهای اختصاصی از منابع آنلاین و فایل‌های HTML/JSON.
+
+Shortcodes:
+[f360_all_leagues] / [f360_leagues] - نمایش همه لیگ‌ها یکجا
+[f360_league_tabs] - نمایش تب‌دار لیگ‌ها
+[f360_league id="premier-league"] - نمایش یک لیگ/رقابت با چیدمان شبیه منبع مرجع
+[f360_competition id="champions-league"] - شورت‌کد رقابت با همان چیدمان
+[f360_league_premier_league] / [f360_competition_premier_league] - شورت‌کد اختصاصی خودکار هر لیگ بر اساس شناسه
+[f360_today_matches] - بازی‌های امروز
+[f360_live_matches] - فقط بازی‌های زنده
+[f360_featured_matches] - بازی‌های مهم
+[f360_mini_table id="premier-league" limit="5"] - جدول خلاصه
+[f360_team_matches team="پرسپولیس"] - بازی‌های یک تیم
+[f360_favorite_teams] - انتخاب تیم محبوب
+[f360_match_preview id="league" home="تیم اول" away="تیم دوم"] - پیش‌نمایش مسابقه
+[f360_team_form id="league" team="تیم"] - فرم تیم
+[f360_top_scorers id="league"] - گلزنان، اگر منبع داده داشته باشد
+[f360_league_news id="league"] - اخبار لیگ
+[f360_team_news team="پرسپولیس"] - اخبار تیم
+
+Admin features:
+- تب جدا برای راهنمای کامل همه شورت‌کدها
+- افزودن سریع لیگ‌های معروف منبع مرجع
+- تست اتصال و استخراج URL
+- پاک‌کردن کش هر لیگ یا همه لیگ‌ها
+- تنظیم رنگ اصلی، رنگ دوم، پس‌زمینه، کارت‌ها، متن، گردی گوشه‌ها، تراکم نمایش
+- فعال‌سازی Ajax Auto Refresh و تعیین فاصله بروزرسانی
+- تعیین TTL کش زنده و کش عادی
+- سیستم لاگ خطاها و رویدادها
+- Health Check سلامت سیستم
+- whitelist دامنه‌های مجاز برای امنیت fetch
+- پیش‌نمایش استخراج URL در ادمین
+- cache lock برای جلوگیری از درخواست همزمان سنگین
+
+HTML files can be uploaded from the admin page or placed in:
+data/leagues/
+
+JSON files can be placed in:
+data/matches/
+
+Architecture:
+- includes/core: repository, cache logic, logger
+- includes/parsers: منبع مرجع, Football360 and JSON parsers
+- includes/admin: WordPress dashboard/admin panel
+- includes/frontend: shortcodes, modules and Ajax rendering
+- assets/css and assets/js: responsive frontend/admin UI
+
+v3.7.1 fixes:
+- استخراج مستقیم ساختار Angular منبع مرجع برای fixtureContainer و one-game
+- تلاش چندلایه برای جدول رده‌بندی با لینک‌های /team/ و بخش‌های standings
+- ساخت logo map از همه تیم‌های صفحه و پرکردن لوگوهای خالی جدول و بازی‌ها
+- چیدمان سه‌ستونه نزدیک‌تر به منبع مرجع برای رقابت‌ها
+- رفع ماندن پنل لیگ قبلی در تب‌ها
+
+
+v3.8.0 scraper directory:
+- ماژول اسکن حرفه‌ای رقابت‌های منبع مرجع از صفحه اصلی، live-scores، competition و لینک‌های داخلی
+- ذخیره دایرکتوری رقابت‌های کشف‌شده در پیشخوان
+- Import همه یا موارد انتخابی به افزونه با لینک‌دهی خودکار source/table/games
+- تب جداگانه «اسکرپر منبع مرجع» در ادمین
+
+
+v3.9.7 hourly updater:
+- آپدیت خودکار سرور با WP-Cron هر ۱ ساعت
+- تنظیم فعال/غیرفعال کردن کران ساعتی از پنل ظاهر و رنگ‌ها
+- نمایش وضعیت زمان‌بندی کران در Health Check
+- بروزرسانی کش همه لیگ‌های فعال بدون نیاز به اجرای دستی
+
+v3.9.7 fixes:
+- حذف نمایش برچسب منبع و زیرعنوان‌های import/scanner از خروجی رقابت
+- سیاه شدن عنوان رقابت در هدر جدول
+- پشتیبانی از آپلود فونت اختصاصی از پنل تنظیمات
+- اضافه شدن پاک‌کردن کل کش‌ها در تب لیگ‌ها
+- اضافه شدن حذف دسته‌جمعی لیگ‌ها
+- اضافه شدن جابجایی ترتیب نمایش لیگ‌ها با Drag & Drop
+- اصلاح تشخیص ساعت به‌عنوان نتیجه، مثل جلوگیری از نمایش 22-00 به جای نتیجه
+- حذف لینک ویدئوها از کارت برنامه بازی‌ها
+
+
+v3.9.7 fixes:
+- حذف کامل فایل‌های JSON نمونه داخلی لیگ‌ها از پکیج
+- پاکسازی خودکار لیگ‌های قدیمی ساخته‌شده از JSON داخلی هنگام بروزرسانی
+- مخفی‌سازی subtitleهای import/scanner در پنل و خروجی
+
+v3.9.7 fixes:
+- حذف آلودگی comment/video از fallback برنامه بازی‌ها
+- لود کامل‌تر عکس بازیکنان گلزنان با fallback CDN از ID بازیکن
+- اعمال اجباری فونت آپلودی روی همه اجزای فرانت و ادمین افزونه
+- اعمال درست رنگ متن تنظیمات روی همه بخش‌های خروجی
+
+v3.9.7 fixes:
+- چیدمان افقی ردیف برنامه بازی‌ها: تیم میزبان، نتیجه/ساعت، تیم مهمان کنار هم
+- فعال شدن تب‌های برترین‌های فصل: گل، پاس گل، مجموع
+- استخراج نوع آمار برترین‌ها از کلاس assist-score و header
