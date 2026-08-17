@@ -120,6 +120,7 @@ public function league_tabs($atts): string {
 
         <aside class="f360ls-tabs-sidebar" aria-label="رقابت‌ها">
             <div class="f360ls-tabs-sidebar-title">رقابت‌ها</div>
+            <button type="button" class="f360ls-league-slider-control is-next" data-f360ls-slide="next" aria-label="لیگ بعدی">‹</button>
 
             <?php foreach ($leagues as $i => $league):
                 $id = sanitize_title($league['id'] ?? '');
@@ -135,6 +136,7 @@ public function league_tabs($atts): string {
                     <small><?php echo esc_html($id); ?></small>
                 </button>
             <?php endforeach; ?>
+            <button type="button" class="f360ls-league-slider-control is-prev" data-f360ls-slide="prev" aria-label="لیگ قبلی">›</button>
         </aside>
 
         <div class="f360ls-tabbed-shell">

@@ -2669,3 +2669,9 @@
     grid-template-columns: minmax(0, 1fr) 58px minmax(0, 1fr);
   }
 }
+
+
+.f360ls-tabs-modern .f360ls-tabs-sidebar { padding-inline: 48px; }
+.f360ls-league-slider-control { position:absolute; top:50%; z-index:2; transform:translateY(-50%); width:30px; height:30px; border:1px solid var(--line); border-radius:50%; background:var(--surface); color:var(--text); font:inherit; font-size:24px; line-height:24px; cursor:pointer; }
+.f360ls-league-slider-control.is-next { inset-inline-start:10px; }
+.f360ls-league-slider-control.is-prev { inset-inline-end:10px; }

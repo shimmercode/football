@@ -386,24 +386,43 @@ class F360LS_Admin {
 
     private function quick_leagues(): array {
         return [
-            ['id'=>'world-cup-2026','title'=>'جام جهانی ۲۰۲۶','url'=>'https://footballi.net/%D8%AC%D8%A7%D9%85-%D8%AC%D9%87%D8%A7%D9%86%DB%8C-2026'],
-            ['id'=>'persian-gulf-pro-league','title'=>'لیگ برتر خلیج فارس','url'=>'https://footballi.net/competition/14/%D9%84%DB%8C%DA%AF-%D8%A8%D8%B1%D8%AA%D8%B1-%D8%AE%D9%84%DB%8C%D8%AC-%D9%81%D8%A7%D8%B1%D8%B3'],
-            ['id'=>'premier-league','title'=>'لیگ برتر انگلیس','url'=>'https://footballi.net/competition/9/%D9%84%DB%8C%DA%AF-%D8%A8%D8%B1%D8%AA%D8%B1-%D8%A7%D9%86%DA%AF%D9%84%DB%8C%D8%B3'],
-            ['id'=>'laliga','title'=>'لالیگا اسپانیا','url'=>'https://footballi.net/competition/21/%D9%84%D8%A7%D9%84%DB%8C%DA%AF%D8%A7-%D8%A7%D8%B3%D9%BE%D8%A7%D9%86%DB%8C%D8%A7'],
-            ['id'=>'serie-a','title'=>'سری آ ایتالیا','url'=>'https://footballi.net/competition/17/%D8%B3%D8%B1%DB%8C-%D8%A2-%D8%A7%DB%8C%D8%AA%D8%A7%D9%84%DB%8C%D8%A7'],
-            ['id'=>'bundesliga','title'=>'بوندس لیگا','url'=>'https://footballi.net/competition/12/%D8%A8%D9%88%D9%86%D8%AF%D8%B3-%D9%84%DB%8C%DA%AF%D8%A7'],
-            ['id'=>'ligue-1','title'=>'لیگ فرانسه','url'=>'https://footballi.net/competition/11/%D9%84%DB%8C%DA%AF-%D9%81%D8%B1%D8%A7%D9%86%D8%B3%D9%87'],
-            ['id'=>'champions-league','title'=>'لیگ قهرمانان اروپا','url'=>'https://footballi.net/competition/3/%D9%84%DB%8C%DA%AF-%D9%82%D9%87%D8%B1%D9%85%D8%A7%D9%86%D8%A7%D9%86-%D8%A7%D8%B1%D9%88%D9%BE%D8%A7'],
-            ['id'=>'europa-league','title'=>'لیگ اروپا','url'=>'https://footballi.net/competition/4/%D9%84%DB%8C%DA%AF-%D8%A7%D8%B1%D9%88%D9%BE%D8%A7'],
-            ['id'=>'elite-asia','title'=>'لیگ نخبگان آسیا','url'=>'https://footballi.net/competition/25/%D9%84%DB%8C%DA%AF-%D9%86%D8%AE%D8%A8%DA%AF%D8%A7%D9%86-%D8%A2%D8%B3%DB%8C%D8%A7'],
-            ['id'=>'acl-two','title'=>'لیگ قهرمانان آسیا ۲','url'=>'https://footballi.net/competition/147/%D9%84%DB%8C%DA%AF-%D9%82%D9%87%D8%B1%D9%85%D8%A7%D9%86%D8%A7%D9%86-%D8%A2%D8%B3%DB%8C%D8%A7-%DB%B2'],
-            ['id'=>'saudi-pro-league','title'=>'لیگ حرفه‌ای عربستان','url'=>'https://footballi.net/competition/104/%D9%84%DB%8C%DA%AF-%D8%AD%D8%B1%D9%81%D9%87-%D8%A7%DB%8C-%D8%B9%D8%B1%D8%A8%D8%B3%D8%AA%D8%A7%D9%86'],
-            ['id'=>'uefa-nations-league','title'=>'لیگ ملت‌های اروپا','url'=>'https://footballi.net/competition/83/%D9%84%DB%8C%DA%AF-%D9%85%D9%84%D8%AA-%D9%87%D8%A7%DB%8C-%D8%A7%D8%B1%D9%88%D9%BE%D8%A7'],
-            ['id'=>'club-friendlies','title'=>'باشگاهی دوستانه سطح 1','url'=>'https://footballi.net/competition/40/%D8%A8%D8%A7%D8%B4%DA%AF%D8%A7%D9%87%DB%8C-%D8%AF%D9%88%D8%B3%D8%AA%D8%A7%D9%86%D9%87-%D8%B3%D8%B7%D8%AD-1'],
-            ['id'=>'efl-cup','title'=>'جام اتحادیه انگلیس','url'=>'https://footballi.net/competition/60/%D8%AC%D8%A7%D9%85-%D8%A7%D8%AA%D8%AD%D8%A7%D8%AF%DB%8C%D9%87-%D8%A7%D9%86%DA%AF%D9%84%DB%8C%D8%B3'],
+            ['id'=>'premier-league','title'=>'لیگ برتر انگلیس','url'=>'https://footballi.net/competition/9'],
+            ['id'=>'laliga','title'=>'لالیگا اسپانیا','url'=>'https://footballi.net/competition/21'],
+            ['id'=>'serie-a','title'=>'سری آ ایتالیا','url'=>'https://footballi.net/competition/17'],
+            ['id'=>'bundesliga','title'=>'بوندس لیگای آلمان','url'=>'https://footballi.net/competition/12'],
+            ['id'=>'persian-gulf-pro-league','title'=>'لیگ برتر ایران','url'=>'https://footballi.net/competition/14'],
+            ['id'=>'ligue-1','title'=>'لیگ 1 فرانسه','url'=>'https://footballi.net/competition/11'],
+            ['id'=>'champions-league','title'=>'لیگ قهرمانان اروپا','url'=>'https://footballi.net/competition/3'],
+            ['id'=>'europa-league','title'=>'لیگ اروپا','url'=>'https://footballi.net/competition/4'],
+            ['id'=>'conference-league','title'=>'لیگ کنفرانس اروپا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'elite-asia','title'=>'لیگ نخبگان آسیا','url'=>'https://footballi.net/competition/25'],
+            ['id'=>'acl-two','title'=>'لیگ قهرمانان 2 آسیا','url'=>'https://footballi.net/competition/147'],
+            ['id'=>'championship','title'=>'چمپیونشیپ انگلیس','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'bundesliga-2','title'=>'بوندس لیگای 2 آلمان','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'scottish-premiership','title'=>'پریمیرشیپ اسکاتلند','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'primeira-liga','title'=>'لیگ برتر پرتغال','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'eredivisie','title'=>'اردیویسه هلند','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'fa-cup','title'=>'جام حذفی انگلیس','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'efl-cup','title'=>'جام اتحادیه انگلیس','url'=>'https://footballi.net/competition/60'],
+            ['id'=>'dfb-pokal','title'=>'جام حذفی آلمان','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'copa-del-rey','title'=>'جام حذفی اسپانیا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'coppa-italia','title'=>'جام حذفی ایتالیا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'coupe-de-france','title'=>'جام حذفی فرانسه','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'saudi-pro-league','title'=>'لیگ برتر عربستان','url'=>'https://footballi.net/competition/104'],
+            ['id'=>'uae-pro-league','title'=>'لیگ برتر امارات','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'qatar-stars-league','title'=>'لیگ ستارگان قطر','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'world-cup-qualifying-asia','title'=>'انتخابی جام جهانی آسیا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'world-cup-qualifying-europe','title'=>'انتخابی جام جهانی اروپا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'world-cup-qualifying-africa','title'=>'انتخابی جام جهانی آفریقا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'world-cup-qualifying-south-america','title'=>'انتخابی جام جهانی آمریکای جنوبی','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'world-cup-qualifying-north-america','title'=>'انتخابی جام جهانی آمریکای شمالی','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'uefa-nations-league','title'=>'لیگ ملت های اروپا','url'=>'https://footballi.net/competition/83'],
+            ['id'=>'afc-asian-cup','title'=>'جام ملت های آسیا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'uefa-euro','title'=>'جام ملت های اروپا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'africa-cup-of-nations','title'=>'جام ملت های آفریقا','url'=>'https://footballi.net/live-scores'],
+            ['id'=>'copa-america','title'=>'کوپا آمریکا','url'=>'https://footballi.net/live-scores'],
         ];
     }
-
     private function default_settings(): array {
         return ['default_theme'=>'light','accent_color'=>'#16a34a','accent2_color'=>'#22c55e','background_color'=>'#f4f7fb','card_color'=>'#ffffff','text_color'=>'#0f172a','radius'=>'32','density'=>'comfortable','show_source'=>'0','show_hero'=>'1','auto_refresh'=>'0','hourly_cron'=>'1','refresh_interval'=>'60','live_cache_ttl'=>'45','default_cache_ttl'=>'21600','allowed_domains'=>"footballi.net\nfootball360.ir\ncdn.oddrun.ir",'custom_font_url'=>'','animations'=>'1'];
     }
@@ -513,9 +532,14 @@ class F360LS_Admin {
     public function import_quick_leagues(): void {
         if (!current_user_can('manage_options') || !check_admin_referer('f360ls_import_quick_leagues')) wp_die('Access denied');
         $repo = F360LS_Repository::instance();
-        foreach ($this->quick_leagues() as $league) {
+        $quick = $this->quick_leagues();
+        foreach ($quick as $league) {
             $repo->upsert_league(['id'=>$league['id'],'title'=>$league['title'],'subtitle'=>'','source_url'=>$league['url'],'games_url'=>'https://footballi.net/live-scores','table_url'=>$league['url'] . '/standing','enabled'=>true,'is_plugin_file'=>false]);
         }
+        $ordered = [];
+        foreach ($quick as $league) if ($item = $repo->get_league($league['id'])) $ordered[] = $item;
+        foreach ($repo->get_leagues() as $item) if (!in_array($item['id'] ?? '', array_column($quick, 'id'), true)) $ordered[] = $item;
+        $repo->save_leagues($ordered);
         $repo->clear_all_caches();
         $this->redirect('leagues', 'لیگ‌های معروف اضافه/بروزرسانی شدند.');
     }

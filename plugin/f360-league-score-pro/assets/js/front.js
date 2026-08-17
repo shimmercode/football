@@ -312,6 +312,15 @@
     // نسخه debounced برای جست‌وجوی متنی
     var debouncedFilter = debounce(applyFilter, 200);
 
+    wrap.querySelectorAll('[data-f360ls-slide]').forEach(function(control){
+      control.addEventListener('click', function(){
+        var activeIndex = Array.prototype.findIndex.call(tabs, function(tab){ return tab.classList.contains('is-active'); });
+        if(activeIndex < 0) activeIndex = 0;
+        var step = control.getAttribute('data-f360ls-slide') === 'next' ? 1 : -1;
+        tabs[(activeIndex + step + tabs.length) % tabs.length].click();
+      });
+    });
+
     tabs.forEach(function(tab){
       tab.addEventListener('click', function(){
         var id = tab.getAttribute('data-f360ls-tab');
