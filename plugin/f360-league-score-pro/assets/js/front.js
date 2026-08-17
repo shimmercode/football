@@ -325,6 +325,8 @@
         });
 
         tab.classList.add('is-active');
+        // Keep the active league visible in the horizontal league slider.
+        if(tab.scrollIntoView) tab.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
 
         var panel = wrap.querySelector('[data-f360ls-panel="' + id + '"]');
 

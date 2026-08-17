@@ -2636,3 +2636,36 @@
     overflow-y: visible;
   }
 }
+
+
+/* League choices stay a horizontal slider on every screen, including desktop. */
+.f360ls-tabs-modern .f360ls-tabs-sidebar {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: inline mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.f360ls-tabs-modern .f360ls-tabs-sidebar::-webkit-scrollbar {
+  display: none;
+}
+
+.f360ls-tabs-modern .f360ls-tabs-sidebar .f360ls-tab {
+  flex: 0 0 clamp(150px, 16vw, 210px);
+  min-width: 150px;
+  scroll-snap-align: center;
+}
+
+/* Keep the two teams close to the score in the full-width matches view. */
+.f360ls-footballi-board[data-f360ls-filter="matches"] .f360ls-vertical-match {
+  grid-template-columns: minmax(190px, 320px) 72px minmax(190px, 320px);
+  justify-content: center;
+}
+
+@media (max-width: 480px) {
+  .f360ls-footballi-board[data-f360ls-filter="matches"] .f360ls-vertical-match {
+    grid-template-columns: minmax(0, 1fr) 58px minmax(0, 1fr);
+  }
+}
