@@ -343,6 +343,7 @@ class F360LS_Footballi_Parser {
         if ($score === '' && $homeScore !== '' && $awayScore !== '') $score = $homeScore . ' - ' . $awayScore;
         if ($score === '') $score = '—';
 
+        $startDate = $this->value($item, ['startDate','start_at','startAt','kickoff','date']);
         $status = $this->value($item, ['status','state','matchStatus','statusTitle','time','date','startTime','kickoff','start_at','startAt','minute']);
         if (is_array($status)) $status = '';
         if ($status === '') $status = ($score !== '—') ? 'پایان' : 'زمان نامشخص';
@@ -355,6 +356,7 @@ class F360LS_Footballi_Parser {
             'score' => $this->clean_score((string) $score),
             'status' => $this->clean_status((string) $status),
             'status_type' => $this->status_type((string) $status, (string) $score),
+            'date' => $this->match_date((string) $startDate),
             'home_logo' => $this->normalize_src($this->team_logo($this->value_raw($item, ['home','homeTeam','host','team1','localTeam','home_team']))),
             'away_logo' => $this->normalize_src($this->team_logo($this->value_raw($item, ['away','awayTeam','guest','team2','visitorTeam','away_team']))),
             'href' => $this->normalize_href((string) $href),
@@ -440,6 +442,7 @@ class F360LS_Footballi_Parser {
             'score' => $this->clean_score($score),
             'status' => $this->clean_status($status),
             'status_type' => $this->status_type($status, $score),
+            'date' => $this->match_date($startDate),
             'home_logo' => $this->normalize_src($logos[0] ?? ''),
             'away_logo' => $this->normalize_src($logos[1] ?? ''),
             'href' => $this->normalize_href($href),
@@ -462,6 +465,8 @@ class F360LS_Footballi_Parser {
     }
 
     private function match_from_node(DOMElement $node, DOMXPath $xpath): ?array {
+        $startMeta = $xpath->query('.//meta[@itemprop="startDate"]', $node)->item(0);
+        $startDate = ($startMeta instanceof DOMElement) ? $startMeta->getAttribute('content') : '';
         $tokens = $this->node_tokens($node);
         $tokens = array_values(array_filter($tokens, fn($t) => !$this->is_meta_token($t)));
         if (count($tokens) < 3) return null;
@@ -500,6 +505,7 @@ class F360LS_Footballi_Parser {
             'score' => $this->clean_score($score),
             'status' => $this->clean_status($status),
             'status_type' => $this->status_type($status, $score),
+            'date' => $this->match_date($startDate),
             'home_logo' => $this->normalize_src($imgs[0] ?? ''),
             'away_logo' => $this->normalize_src($imgs[1] ?? ''),
             'href' => $this->normalize_href($node->getAttribute('href')),
@@ -983,6 +989,10 @@ class F360LS_Footballi_Parser {
         $text = preg_replace('/\s+(تیم|باشگاه فوتبال)$/u', '', $text);
         $text = preg_replace('/^\d+\s*/u', '', $text);
         return trim($text);
+    }
+
+    private function match_date(string $value): string {
+        return preg_match('/\d{4}-\d{2}-\d{2}/', $value, $match) ? $match[0] : '';
     }
 
     private function clean_score(string $text): string {

@@ -414,6 +414,11 @@ public function league_tabs($atts): string {
         wp_send_json_success(['html' => $html, 'time' => current_time('mysql')]);
     }
 
+    private function match_date_label(string $date): string {
+        if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $date, $parts)) return '';
+        return $parts[1] . '/' . $parts[2] . '/' . $parts[3];
+    }
+
     private function tab_label(string $title): string {
         // Saved league titles sometimes use a slug-style hyphen between Persian words.
         // This affects only the top league selector, not official team names or source data.
@@ -486,14 +491,17 @@ public function league_tabs($atts): string {
         $last_group = null;
         ob_start(); ?>
         <div class="f360ls-table-scroll"><table class="f360ls-standings-table"><thead><tr><th></th><th>تیم</th><th>بازی</th><th>برد</th><th>مساوی</th><th>باخت</th><th>تفاضل</th><th>گل +/-</th><th>امتیاز</th></tr></thead><tbody>
-            <?php foreach ($standings as $row):
+            <?php $display_rank = 0; $used_ranks = []; foreach ($standings as $row):
                 $group = $row['group'] ?? '';
-                if ($group && $group !== $last_group): $last_group = $group; ?>
+                if ($group && $group !== $last_group): $last_group = $group; $display_rank = 0; $used_ranks = []; ?>
                     <tr class="f360ls-group-row"><td colspan="9"><?php echo esc_html($group); ?></td></tr>
                 <?php endif;
-                $rank = intval($row['rank'] ?? 0); ?>
+                $source_rank = intval($row['rank'] ?? 0);
+                $display_rank++;
+                $rank = ($source_rank > 0 && !isset($used_ranks[$source_rank])) ? $source_rank : $display_rank;
+                $used_ranks[$rank] = true; ?>
                 <tr class="<?php echo $rank > 0 && $rank <= 3 ? 'is-top-rank' : ''; ?>" data-search="<?php echo esc_attr($row['team'] ?? ''); ?>">
-                    <td class="rank"><span><?php echo esc_html($row['rank'] ?? ''); ?></span></td>
+                    <td class="rank"><span><?php echo esc_html($rank); ?></span></td>
                     <td class="team"><?php if (!empty($row['logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($row['logo']); ?>" alt="<?php echo esc_attr($row['team']); ?>"><?php endif; ?><span><?php echo esc_html($row['team'] ?? ''); ?></span><i class="move move-<?php echo esc_attr($row['movement'] ?? 'equal'); ?>"></i></td>
                     <td><?php echo esc_html($row['played'] ?? ''); ?></td><td><?php echo esc_html($row['won'] ?? ''); ?></td><td><?php echo esc_html($row['draw'] ?? ''); ?></td><td><?php echo esc_html($row['lost'] ?? ''); ?></td><td><?php echo esc_html($row['diff'] ?? ''); ?></td><td><?php echo esc_html($row['goals'] ?? ''); ?></td><td class="points"><?php echo esc_html($row['points'] ?? ''); ?></td>
                 </tr>
@@ -504,10 +512,15 @@ public function league_tabs($atts): string {
     private function render_matches_column(array $weeks): string {
         ob_start(); ?>
         <div class="f360ls-vertical-matches">
-            <?php foreach ($weeks as $week): ?>
+            <?php foreach ($weeks as $week): $shown_date = ''; ?>
                 <div class="f360ls-vertical-week">
-                    <?php if (!empty($week['title'])): ?><h4><?php echo esc_html($week['title']); ?></h4><?php endif; ?>
-                    <?php foreach (($week['matches'] ?? []) as $m): ?>
+                    <?php foreach (($week['matches'] ?? []) as $m):
+                        $match_date = $this->match_date_label((string) ($m['date'] ?? ''));
+                        if ($match_date !== '' && $match_date !== $shown_date): $shown_date = $match_date; ?>
+                            <h4><?php echo esc_html($match_date); ?></h4>
+                        <?php elseif ($shown_date === '' && !empty($week['title'])): $shown_date = '__week__'; ?>
+                            <h4><?php echo esc_html($week['title']); ?></h4>
+                        <?php endif; ?>
                         <article class="f360ls-vertical-match" data-search="<?php echo esc_attr(($m['home'] ?? '') . ' ' . ($m['away'] ?? '')); ?>">
                             <div class="f360ls-match-date"><?php echo esc_html($m['status'] ?? ''); ?></div>
                             <div class="f360ls-match-teams-row">
