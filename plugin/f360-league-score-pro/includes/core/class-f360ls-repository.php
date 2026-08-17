@@ -355,12 +355,20 @@ class F360LS_Repository {
 
     private function dedupe_matches(array $matches): array {
         $out = [];
-        $seen = [];
+        $positions = [];
         foreach ($matches as $m) {
-            $key = md5(($m['home'] ?? '') . '|' . ($m['away'] ?? '') . '|' . ($m['score'] ?? '') . '|' . ($m['status'] ?? ''));
-            if (isset($seen[$key])) continue;
-            $seen[$key] = true;
-            $out[] = $m;
+            // A fixture and its later final result are the same match. Keep the final
+            // score instead of retaining the older scheduled “—” entry.
+            $key = md5(mb_strtolower(trim(($m['home'] ?? '') . '|' . ($m['away'] ?? '')), 'UTF-8'));
+            if (!isset($positions[$key])) {
+                $positions[$key] = count($out);
+                $out[] = $m;
+                continue;
+            }
+            $current = $out[$positions[$key]];
+            if (($current['score'] ?? '—') === '—' && ($m['score'] ?? '—') !== '—') {
+                $out[$positions[$key]] = $m;
+            }
         }
         return $out;
     }

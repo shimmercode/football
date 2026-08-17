@@ -336,9 +336,9 @@ class F360LS_Footballi_Parser {
         $away = $this->team_name($this->value_raw($item, ['away','awayTeam','guest','team2','visitorTeam','away_team'])) ?: $this->value($item, ['away.name','awayTeam.name','guest.name','team2.name','visitorTeam.name','away_team.name','awayTitle','away_name']);
         if (!$home || !$away) return null;
 
-        $homeScore = $this->value($item, ['home_score','homeScore','home.goals','home.score','homeTeam.score','score.home','result.home','scores.home']);
-        $awayScore = $this->value($item, ['away_score','awayScore','away.goals','away.score','awayTeam.score','score.away','result.away','scores.away']);
-        $score = $this->value($item, ['score','result','final_score','matchScore','scores.ft']);
+        $homeScore = $this->value($item, ['home_score','homeScore','homeTeamScore','home.goals','home.score','homeTeam.score','score.home','result.home','result.homeScore','result.homeTeamScore','scores.home','scores.homeScore']);
+        $awayScore = $this->value($item, ['away_score','awayScore','awayTeamScore','away.goals','away.score','awayTeam.score','score.away','result.away','result.awayScore','result.awayTeamScore','scores.away','scores.awayScore']);
+        $score = $this->value($item, ['score','result','final_score','finalScore','matchScore','scores.ft','scores.fullTime','result.score']);
         if (is_array($score)) $score = '';
         if ($score === '' && $homeScore !== '' && $awayScore !== '') $score = $homeScore . ' - ' . $awayScore;
         if ($score === '') $score = '—';
