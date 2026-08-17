@@ -3,7 +3,7 @@
  * Plugin Name: footballi league sync
  * Plugin URI: https://example.com
  * Description: نمایش حرفه‌ای نتایج زنده، برنامه بازی‌ها و جدول لیگ‌ها از منابع آنلاین، با شورت‌کد اختصاصی هر لیگ و نمای کلی همه لیگ‌ها.
- * Version: 3.10.5
+ * Version: 3.10.6
  * Author: Vira Agency
  * Text Domain: f360-league-score-pro
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('F360LS_VERSION', '3.10.5');
+define('F360LS_VERSION', '3.10.6');
 define('F360LS_PLUGIN_FILE', __FILE__);
 define('F360LS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('F360LS_PLUGIN_URL', plugin_dir_url(__FILE__));

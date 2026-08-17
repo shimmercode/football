@@ -2,7 +2,7 @@
 Contributors: shimmercode
 Requires at least: 5.6
 Requires PHP: 7.4
-Stable tag: 3.10.5
+Stable tag: 3.10.6
 License: GPLv2 or later
 
 نمایش حرفه‌ای جدول لیگ‌ها، نتایج زنده، بازی‌های امروز، بازی‌های تیم‌ها، فرم تیم‌ها، اخبار و شورت‌کدهای اختصاصی از منابع آنلاین و فایل‌های HTML/JSON.

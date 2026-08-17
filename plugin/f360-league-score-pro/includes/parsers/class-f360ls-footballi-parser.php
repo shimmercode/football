@@ -34,12 +34,10 @@ class F360LS_Footballi_Parser {
         $weeks = $this->parse_weeks_from_json();
         $footballi_weeks = $this->parse_matches_from_footballi_dom();
         if ($footballi_weeks) $weeks = array_merge($weeks, $footballi_weeks);
-        $dom_weeks = $this->parse_matches_from_dom();
-        if ($dom_weeks) $weeks = array_merge($weeks, $dom_weeks);
-        if (empty($weeks)) {
-            $text_weeks = $this->parse_matches_from_text();
-            if ($text_weeks) $weeks = array_merge($weeks, $text_weeks);
-        }
+        // Footballi pages contain unrelated match links in news/footer blocks. Only
+        // fixtureContainer/one-game entries belong to the selected competition.
+        // Do not fall back to page-wide match-link or text scanning here.
+
         $weeks = $this->dedupe_weeks($this->enrich_weeks_logos($weeks, $team_logo_map));
 
         $matches = [];
@@ -84,13 +82,13 @@ class F360LS_Footballi_Parser {
             $ogTitle = $this->meta_content($xpath, 'og:title') ?: $this->meta_content($xpath, 'twitter:title');
             if (!$title && $ogTitle) $title = $this->clean_title($ogTitle);
 
-            $ogImage = $this->meta_content($xpath, 'og:image') ?: $this->meta_content($xpath, 'twitter:image');
-            if (!$logo && $ogImage && !preg_match('~/news/|/players/~', $ogImage)) $logo = $ogImage;
+            // Prefer the competition crest. Footballi's og:image is often its own
+            // site branding or a news image, not the selected league logo.
+            $img = $xpath->query('//img[contains(@src,"/competitions/") or contains(@data-src,"/competitions/") or contains(@src,"cdn.oddrun.ir/competitions")]')->item(0);
+            if (!$logo && $img instanceof DOMElement) $logo = $this->image_src($img);
 
-            if (!$logo) {
-                $img = $xpath->query('//img[contains(@src,"/competitions/") or contains(@data-src,"/competitions/") or contains(@src,"cdn.oddrun.ir/competitions")]')->item(0);
-                if ($img instanceof DOMElement) $logo = $this->image_src($img);
-            }
+            $ogImage = $this->meta_content($xpath, 'og:image') ?: $this->meta_content($xpath, 'twitter:image');
+            if (!$logo && $ogImage && preg_match('~/competitions?/|cdn\.oddrun\.ir/competitions/~i', $ogImage)) $logo = $ogImage;
         }
 
         if (!$title) {
