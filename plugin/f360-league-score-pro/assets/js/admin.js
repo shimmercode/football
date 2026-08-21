@@ -32,3 +32,4 @@
     updateOrder();
   });
 })();
+document.addEventListener('click', function(e){ if(!e.target.classList.contains('f360ls-select-media')||!window.wp||!wp.media)return; e.preventDefault(); var input=e.target.previousElementSibling; var frame=wp.media({title:'انتخاب لوگو',multiple:false,library:{type:'image'}}); frame.on('select',function(){input.value=frame.state().get('selection').first().toJSON().url;}); frame.open();});

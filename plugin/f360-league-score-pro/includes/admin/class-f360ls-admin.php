@@ -17,6 +17,9 @@ class F360LS_Admin {
         add_action('admin_post_f360ls_import_footballi_directory', [$this, 'import_footballi_directory']);
         add_action('admin_post_f360ls_clear_footballi_directory', [$this, 'clear_footballi_directory']);
         add_action('admin_post_f360ls_clear_logs', [$this, 'clear_logs']);
+        add_action('admin_post_f360ls_save_logo_overrides', [$this, 'save_logo_overrides']);
+        add_action('admin_post_f360ls_run_scraper', [$this, 'run_scraper']);
+        add_action('admin_post_f360ls_save_scraper_settings', [$this, 'save_scraper_settings']);
         add_action('admin_enqueue_scripts', [$this, 'assets']);
     }
 
@@ -26,6 +29,7 @@ class F360LS_Admin {
 
     public function assets($hook): void {
         if ($hook !== 'toplevel_page_f360ls') return;
+        wp_enqueue_media();
         wp_enqueue_style('f360ls-admin', F360LS_PLUGIN_URL . 'assets/css/admin.css', [], F360LS_VERSION);
         $settings = $this->get_settings();
         if (!empty($settings['custom_font_url'])) {
@@ -37,7 +41,7 @@ class F360LS_Admin {
     public function render(): void {
         if (!current_user_can('manage_options')) return;
         $tab = sanitize_key($_GET['tab'] ?? 'leagues');
-        $allowed = ['leagues','directory','appearance','shortcodes','tools','health','logs'];
+        $allowed = ['leagues','directory','logos','scraper','appearance','shortcodes','tools','health','logs'];
         if (!in_array($tab, $allowed, true)) $tab = 'leagues';
         ?>
         <div class="wrap f360ls-admin">
@@ -52,12 +56,14 @@ class F360LS_Admin {
                 <div class="notice notice-success is-dismissible"><p><?php echo esc_html(wp_unslash($_GET['f360ls_msg'])); ?></p></div>
             <?php endif; ?>
             <nav class="nav-tab-wrapper f360ls-nav">
-                <?php foreach (['leagues'=>'لیگ‌ها','directory'=>'اسکرپر رقابت‌ها','appearance'=>'ظاهر و رنگ‌ها','shortcodes'=>'راهنمای شورت‌کدها','tools'=>'ابزارها و تست','health'=>'سلامت سیستم','logs'=>'گزارش خطاها'] as $key => $label): ?>
+                <?php foreach (['leagues'=>'لیگ‌ها','directory'=>'اسکرپر رقابت‌ها','logos'=>'مدیریت دستی لوگوها','scraper'=>'بروزرسانی خودکار و اسکرپ','appearance'=>'ظاهر و رنگ‌ها','shortcodes'=>'راهنمای شورت‌کدها','tools'=>'ابزارها و تست','health'=>'سلامت سیستم','logs'=>'گزارش خطاها'] as $key => $label): ?>
                     <a class="nav-tab <?php echo $tab === $key ? 'nav-tab-active' : ''; ?>" href="<?php echo esc_url(add_query_arg(['page'=>'f360ls','tab'=>$key], admin_url('admin.php'))); ?>"><?php echo esc_html($label); ?></a>
                 <?php endforeach; ?>
             </nav>
             <?php
             if ($tab === 'directory') $this->render_directory_tab();
+            elseif ($tab === 'logos') $this->render_logos_tab();
+            elseif ($tab === 'scraper') $this->render_scraper_tab();
             elseif ($tab === 'appearance') $this->render_appearance_tab();
             elseif ($tab === 'shortcodes') $this->render_shortcodes_tab();
             elseif ($tab === 'tools') $this->render_tools_tab();
@@ -742,6 +748,25 @@ class F360LS_Admin {
         }
         return $html;
     }
+
+    private function render_logos_tab(): void {
+        $repo = F360LS_Repository::instance(); $overrides = get_option(F360LS_OPTION_LOGO_OVERRIDES, []); $overrides = is_array($overrides) ? $overrides : [];
+        $teams = [];
+        foreach ($repo->get_leagues() as $league) foreach (($repo->parse_league($league['id'])['standings'] ?? []) as $team) if (!empty($team['team'])) $teams[$team['team']] = $team['logo'] ?? '';
+        ?> <div class="f360ls-card"><h2>مدیریت دستی لوگوها</h2><p>لوگوی دستی همیشه بر لوگوی استخراج‌شده اولویت دارد. با خالی‌کردن فیلد، لوگوی خودکار دوباره استفاده می‌شود.</p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('f360ls_save_logo_overrides'); ?><input type="hidden" name="action" value="f360ls_save_logo_overrides">
+        <h3>لوگوی لیگ‌ها</h3><?php foreach ($repo->get_leagues() as $league): $id=$league['id']; $value=$overrides['leagues'][$id] ?? ''; ?><p><strong><?php echo esc_html($league['title']); ?></strong><br><input class="regular-text f360ls-media-url" name="league_logo[<?php echo esc_attr($id); ?>]" value="<?php echo esc_url($value); ?>"><button class="button f360ls-select-media" type="button">انتخاب از رسانه</button></p><?php endforeach; ?>
+        <h3>لوگوی تیم‌ها</h3><?php foreach ($teams as $team=>$automatic): $value=$overrides['teams'][$team] ?? ''; ?><p><strong><?php echo esc_html($team); ?></strong><br><input class="regular-text f360ls-media-url" name="team_logo[<?php echo esc_attr($team); ?>]" value="<?php echo esc_url($value); ?>"><button class="button f360ls-select-media" type="button">انتخاب از رسانه</button></p><?php endforeach; submit_button('ذخیره لوگوهای دستی'); ?></form></div><?php
+    }
+    private function render_scraper_tab(): void {
+        $settings=get_option(F360LS_OPTION_SCRAPER, []); $settings=is_array($settings)?$settings:[]; $last=get_option('f360ls_scraper_last', []); ?>
+        <div class="f360ls-card"><h2>اسکرپ و بروزرسانی خودکار</h2><p>آخرین اجرا: <?php echo esc_html($last['time'] ?? 'هنوز اجرا نشده'); ?> — <?php echo esc_html($last['message'] ?? ''); ?></p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('f360ls_run_scraper'); ?><input type="hidden" name="action" value="f360ls_run_scraper"><button class="button button-primary" name="scope" value="all">بروزرسانی همه داده‌ها</button><button class="button" name="scope" value="live">بروزرسانی بازی‌های زنده</button></form>
+        <hr><form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>"><?php wp_nonce_field('f360ls_save_scraper_settings'); ?><input type="hidden" name="action" value="f360ls_save_scraper_settings"><label>دوره Auto Update <select name="interval"><option value="5" <?php selected($settings['interval']??60,5); ?>>هر ۵ دقیقه</option><option value="15" <?php selected($settings['interval']??60,15); ?>>هر ۱۵ دقیقه</option><option value="30" <?php selected($settings['interval']??60,30); ?>>هر ۳۰ دقیقه</option><option value="60" <?php selected($settings['interval']??60,60); ?>>هر ۱ ساعت</option></select></label><?php submit_button('ذخیره زمان‌بندی'); ?></form></div><?php
+    }
+    public function save_logo_overrides(): void { if(!current_user_can('manage_options')||!check_admin_referer('f360ls_save_logo_overrides')) wp_die('Access denied'); $clean=[]; foreach(['league_logo'=>'leagues','team_logo'=>'teams'] as $post=>$type) foreach((array)($_POST[$post]??[]) as $key=>$url) { $url=esc_url_raw(wp_unslash($url)); if($url) $clean[$type][sanitize_text_field(wp_unslash($key))]=$url; } update_option(F360LS_OPTION_LOGO_OVERRIDES,$clean,false); F360LS_Repository::instance()->clear_all_caches(); $this->redirect('logos','لوگوهای دستی ذخیره شدند.'); }
+    public function run_scraper(): void { if(!current_user_can('manage_options')||!check_admin_referer('f360ls_run_scraper')) wp_die('Access denied'); $repo=F360LS_Repository::instance(); $count=0; foreach($repo->get_enabled_leagues() as $league){$repo->clear_cache($league['id']);$repo->parse_league($league['id']);$count++;} update_option('f360ls_scraper_last',['time'=>current_time('mysql'),'message'=>$count.' لیگ بروزرسانی شد.'],false); $this->redirect('scraper','بروزرسانی انجام شد.'); }
+    public function save_scraper_settings(): void { if(!current_user_can('manage_options')||!check_admin_referer('f360ls_save_scraper_settings')) wp_die('Access denied'); update_option(F360LS_OPTION_SCRAPER,['interval'=>max(5,min(60,absint($_POST['interval']??60)))],false); $this->redirect('scraper','تنظیم زمان‌بندی ذخیره شد.'); }
 
     private function domain_allowed(string $url): bool {
         $host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));

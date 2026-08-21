@@ -157,6 +157,7 @@ class F360LS_Repository {
             $payload['league']['title'] = $league['title'] ?? $league['id'];
         }
 
+        $payload = $this->apply_logo_overrides($payload);
         $payload['stats'] = $this->build_stats($payload);
         if (empty($payload['last_update'])) {
             $payload['last_update'] = $this->fallback_last_update($league, $sources);
@@ -401,6 +402,17 @@ class F360LS_Repository {
             $out[] = $item;
         }
         return $out;
+    }
+
+    private function apply_logo_overrides(array $payload): array {
+        $overrides = get_option(F360LS_OPTION_LOGO_OVERRIDES, []);
+        if (!is_array($overrides)) return $payload;
+        $league_id = $payload['id'] ?? '';
+        if (!empty($overrides['leagues'][$league_id])) $payload['league']['logo'] = $overrides['leagues'][$league_id];
+        foreach (['standings'] as $key) foreach (($payload[$key] ?? []) as $i => $row) if (!empty($overrides['teams'][$row['team'] ?? ''])) $payload[$key][$i]['logo'] = $overrides['teams'][$row['team']];
+        foreach (['matches'] as $key) foreach (($payload[$key] ?? []) as $i => $match) { if (!empty($overrides['teams'][$match['home'] ?? ''])) $payload[$key][$i]['home_logo']=$overrides['teams'][$match['home']]; if (!empty($overrides['teams'][$match['away'] ?? ''])) $payload[$key][$i]['away_logo']=$overrides['teams'][$match['away']]; }
+        foreach (($payload['weeks'] ?? []) as $wi => $week) foreach (($week['matches'] ?? []) as $mi => $match) { if (!empty($overrides['teams'][$match['home'] ?? ''])) $payload['weeks'][$wi]['matches'][$mi]['home_logo']=$overrides['teams'][$match['home']]; if (!empty($overrides['teams'][$match['away'] ?? ''])) $payload['weeks'][$wi]['matches'][$mi]['away_logo']=$overrides['teams'][$match['away']]; }
+        return $payload;
     }
 
     private function build_stats(array $payload): array {

@@ -314,10 +314,11 @@
 
     wrap.querySelectorAll('[data-f360ls-slide]').forEach(function(control){
       control.addEventListener('click', function(){
-        var activeIndex = Array.prototype.findIndex.call(tabs, function(tab){ return tab.classList.contains('is-active'); });
-        if(activeIndex < 0) activeIndex = 0;
-        var step = control.getAttribute('data-f360ls-slide') === 'next' ? 1 : -1;
-        tabs[(activeIndex + step + tabs.length) % tabs.length].click();
+        var track = wrap.querySelector('.f360ls-tabs-slider-track');
+        if(!track) return;
+        var amount = Math.max(160, Math.round(track.clientWidth * 0.7));
+        var direction = control.getAttribute('data-f360ls-slide') === 'next' ? -1 : 1;
+        track.scrollBy({ left: direction * amount, behavior: 'smooth' });
       });
     });
 
