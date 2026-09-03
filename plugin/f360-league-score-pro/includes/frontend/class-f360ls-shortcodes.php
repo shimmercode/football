@@ -418,6 +418,10 @@ public function league_tabs($atts): string {
         wp_send_json_success(['html' => $html, 'time' => current_time('mysql')]);
     }
 
+    private function fa_digits(string $text): string {
+        return strtr($text, ['0'=>'۰','1'=>'۱','2'=>'۲','3'=>'۳','4'=>'۴','5'=>'۵','6'=>'۶','7'=>'۷','8'=>'۸','9'=>'۹']);
+    }
+
     private function match_date_label(string $date): string {
         if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $date, $parts)) return '';
         $gregorian = $parts[1] . '-' . $parts[2] . '-' . $parts[3];
@@ -576,7 +580,8 @@ public function league_tabs($atts): string {
                     <?php foreach ($week_matches as $m):
                         $is_live = (($m['status_type'] ?? '') === 'live');
                         $status_type = $m['status_type'] ?? 'scheduled';
-                        $match_date = $this->match_date_label((string) ($m['date'] ?? ''));
+                        $match_date = trim((string) ($m['date_label'] ?? ''));
+                        if ($match_date === '') $match_date = $this->match_date_label((string) ($m['date'] ?? ''));
                         $home_score = '';
                         $away_score = '';
                         if (preg_match('/(\d+)\s*[-–]\s*(\d+)/u', (string) ($m['score'] ?? ''), $sm)) {
@@ -585,7 +590,7 @@ public function league_tabs($atts): string {
                         }
                         $kickoff = '';
                         if ($status_type === 'scheduled' && preg_match('/\d{1,2}:\d{2}/', (string) ($m['status'] ?? ''), $tm)) {
-                            $kickoff = $tm[0];
+                            $kickoff = $this->fa_digits($tm[0]);
                         }
                         if ($match_date !== '' && $match_date !== $shown_date): $shown_date = $match_date; ?>
                             <div class="f360ls-fixture-date"><?php echo esc_html($match_date); ?></div>

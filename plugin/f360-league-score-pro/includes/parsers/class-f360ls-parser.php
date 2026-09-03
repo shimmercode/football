@@ -23,7 +23,8 @@ class F360LS_Parser {
         $league = $this->parse_league_meta($xpath);
         $standings = $this->parse_standings($xpath);
         if (!$standings) $standings = $this->parse_standings_generic($xpath);
-        $weeks = $this->parse_match_weeks($xpath);
+        $weeks = $this->parse_schedule_page($xpath);
+        if (!$weeks) $weeks = $this->parse_match_weeks($xpath);
         if (!$weeks) $weeks = $this->parse_matches_from_links($xpath);
 
         $flat = [];
@@ -244,6 +245,56 @@ class F360LS_Parser {
         return $this->renumber_standings($standings);
     }
 
+    private function parse_schedule_page(DOMXPath $xpath): array {
+        $heads = [];
+        foreach ($xpath->query("//*[contains(., 'هفته')]") ?: [] as $el) {
+            if (!$el instanceof DOMElement) continue;
+            $title = $this->clean($el->textContent);
+            if ($title === '' || mb_strlen($title, 'UTF-8') > 90) continue;
+            if (preg_match('/^هفته\\s*\\d+$/u', $title)) continue;
+            if (!preg_match('/هفته\\s*(\\d+)/u', $title, $wm)) continue;
+            $nested = $xpath->query('.//a[contains(@href,"/matches/")]', $el);
+            if ($nested && $nested->length) continue;
+            $week_no = (int) $wm[1];
+            if ($week_no < 1 || $week_no > 60) continue;
+            $date_label = trim(preg_replace('/\\s*[-–]\\s*هفته\\s*\\d+\\s*$/u', '', $title));
+            $heads[] = [
+                'node' => $el,
+                'week' => $week_no,
+                'title' => 'هفته ' . $week_no,
+                'date_label' => $date_label !== $title ? $date_label : '',
+            ];
+        }
+        if (!$heads) return [];
+
+        $by_week = [];
+        $seen = [];
+        foreach ($xpath->query("//a[contains(@href,'/matches/') or contains(@href,'/match/')]") ?: [] as $a) {
+            if (!$a instanceof DOMElement) continue;
+            $match = $this->match_from_anchor($xpath, $a);
+            if (!$match) continue;
+            $href = (string) ($match['href'] ?? '');
+            if ($href !== '' && isset($seen[$href])) continue;
+            if ($href !== '') $seen[$href] = true;
+            $chosen = null;
+            foreach ($heads as $head) {
+                $pos = $head['node']->compareDocumentPosition($a);
+                if ($pos & XML_DOCUMENT_POSITION_FOLLOWING) $chosen = $head;
+            }
+            if (!$chosen) continue;
+            if (!empty($chosen['date_label'])) $match['date_label'] = $chosen['date_label'];
+            $by_week[$chosen['week']]['title'] = $chosen['title'];
+            $by_week[$chosen['week']]['matches'][] = $match;
+        }
+        if (!$by_week) return [];
+        ksort($by_week, SORT_NUMERIC);
+        $weeks = [];
+        foreach ($by_week as $week) {
+            if (!empty($week['matches'])) $weeks[] = $week;
+        }
+        return $weeks;
+    }
+
     private function parse_matches_from_links(DOMXPath $xpath): array {
         $items = $xpath->query("//a[contains(@href,'/matches/') or contains(@href,'/match/')]");
         if (!$items || !$items->length) return [];
@@ -287,10 +338,13 @@ class F360LS_Parser {
             }
         }
         $text = $this->clean($a->textContent);
+        $plain = $this->fa_to_en($text);
         $score = '—';
         $status = '';
-        if (preg_match('/(\d+)\s*[-–]\s*(\d+)/u', $text, $m)) $score = $this->fa_to_en($m[1]) . ' - ' . $this->fa_to_en($m[2]);
-        if (preg_match('/زنده|نیمه|پایان|تمام|وقت|لغو|تعویق|\d{1,2}:\d{2}|\d+\s*[\'′]|\d+\s*دقیقه/u', $text, $sm)) $status = $sm[0];
+        $kickoff = $this->extract_kickoff($plain);
+        if (preg_match('/(\d+)\s*[-–]\s*(\d+)/u', $plain, $m)) $score = $m[1] . ' - ' . $m[2];
+        if (preg_match('/زنده|نیمه|پایان|تمام|وقت|لغو|تعویق/u', $text, $sm)) $status = $sm[0];
+        if ($status === '' && $kickoff !== '') $status = $kickoff;
         if (count($names) < 2) {
             $stripped = $text;
             $stripped = preg_replace('/\d+\s*[-–]\s*\d+/u', ' ', $stripped);
@@ -543,10 +597,20 @@ class F360LS_Parser {
     private function status_type($status, $score): string {
         $s = trim((string) $status);
         $score = trim((string) $score);
-        if (preg_match('/زنده|live|نیمه|در جریان|در حال|\d+\s*[\'′]|\d+\s*دقیقه|وقت اضافه/iu', $s)) return 'live';
+        if (preg_match('/زنده|live|نیمه|در جریان|در حال|وقت اضافه/iu', $s)) return 'live';
+        if ($this->extract_kickoff($s) !== '') return 'scheduled';
         if (preg_match('/پایان|تمام|FT|بعد از پنالتی/u', $s)) return 'finished';
-        if (preg_match('/\d+\s*-\s*\d+/u', $score) && !preg_match('/\d{1,2}:\d{2}/', $s)) return 'finished';
+        if (preg_match('/\d+\s*-\s*\d+/u', $score) && $this->extract_kickoff($s) === '') return 'finished';
         return 'scheduled';
+    }
+
+    private function extract_kickoff(string $text): string {
+        $plain = $this->fa_to_en($text);
+        if (!preg_match('/(?<!\d)(\d{1,2})\s*[:：]\s*(\d{2})(?!\d)/u', $plain, $m)) return '';
+        $hour = (int) $m[1];
+        $minute = (int) $m[2];
+        if ($hour > 23 || $minute > 59) return '';
+        return sprintf('%02d:%02d', $hour, $minute);
     }
 
     private function extract_minute(string $status): string {
@@ -909,8 +973,11 @@ class F360LS_Parser {
             $text = $this->strip($body);
             $score = '—';
             $status = '';
-            if (preg_match('/(\d+)\s*[-–]\s*(\d+)/u', $text, $m)) $score = $this->fa_to_en($m[1]) . ' - ' . $this->fa_to_en($m[2]);
-            if (preg_match('/زنده|نیمه|پایان|تمام|\d{1,2}:\d{2}/u', $text, $sm)) $status = $sm[0];
+            $plain = $this->fa_to_en($text);
+            $kickoff = $this->extract_kickoff($plain);
+            if (preg_match('/(\d+)\s*[-–]\s*(\d+)/u', $plain, $m)) $score = $m[1] . ' - ' . $m[2];
+            if (preg_match('/زنده|نیمه|پایان|تمام/u', $text, $sm)) $status = $sm[0];
+            if ($status === '' && $kickoff !== '') $status = $kickoff;
             if (count($alts) < 2) continue;
             if ($status === '') $status = ($score !== '—') ? 'پایان' : 'زمان نامشخص';
             $matches[] = [
