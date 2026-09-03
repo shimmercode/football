@@ -127,9 +127,12 @@ class F360LS_Admin {
                     <tr><th><label for="league_id">شناسه لیگ</label></th><td><input name="league_id" id="league_id" type="text" class="regular-text" placeholder="premier-league" required><p class="description">برای شورت‌کد اختصاصی استفاده می‌شود. انگلیسی و بدون فاصله بهتر است.</p></td></tr>
                     <tr><th><label for="title">عنوان لیگ</label></th><td><input name="title" id="title" type="text" class="regular-text" placeholder="لیگ برتر انگلیس" required></td></tr>
                     <tr><th><label for="subtitle">زیرعنوان</label></th><td><input name="subtitle" id="subtitle" type="text" class="regular-text" placeholder="فصل 2025/2026"></td></tr>
-                    <tr><th><label for="source_url">لینک منبع اصلی</label></th><td><input name="source_url" id="source_url" type="url" class="large-text" placeholder="https://footballi.net/competition/..."><p class="description">لینک صفحه لیگ/رقابت یا نتایج زنده را وارد کنید.</p></td></tr>
-                    <tr><th><label for="games_url">لینک اختصاصی بازی‌ها</label></th><td><input name="games_url" id="games_url" type="url" class="large-text" placeholder="https://footballi.net/live-scores"><p class="description">اختیاری؛ برای نتایج زنده می‌توان /live-scores را وارد کرد.</p></td></tr>
-                    <tr><th><label for="table_url">لینک اختصاصی جدول</label></th><td><input name="table_url" id="table_url" type="url" class="large-text" placeholder="https://footballi.net/competition/.../standing"><p class="description">اختیاری؛ لینک صفحه جدول یا لیگ.</p></td></tr>
+                    <tr><th><label for="source_url">لینک منبع اصلی (فوتبال۳۶۰)</label></th><td><input name="source_url" id="source_url" type="url" class="large-text" placeholder="https://football360.ir/league/..."><p class="description">اولویت با football360.ir است. اگر این سایت قطع باشد، لینک پشتیبان فوتبالی استفاده می‌شود.</p></td></tr>
+                    <tr><th><label for="games_url">لینک اختصاصی بازی‌ها</label></th><td><input name="games_url" id="games_url" type="url" class="large-text" placeholder="https://football360.ir/league/.../games"><p class="description">اختیاری؛ معمولاً به‌صورت خودکار از لینک لیگ ساخته می‌شود.</p></td></tr>
+                    <tr><th><label for="table_url">لینک اختصاصی جدول</label></th><td><input name="table_url" id="table_url" type="url" class="large-text" placeholder="https://football360.ir/league/..."><p class="description">اختیاری؛ لینک صفحه جدول فوتبال۳۶۰.</p></td></tr>
+                    <tr><th><label for="statistics_url">لینک آمار</label></th><td><input name="statistics_url" id="statistics_url" type="url" class="large-text" placeholder="https://football360.ir/league/.../statistics"></td></tr>
+                    <tr><th><label for="transfers_url">لینک نقل و انتقالات</label></th><td><input name="transfers_url" id="transfers_url" type="url" class="large-text" placeholder="https://football360.ir/league/.../transfers"></td></tr>
+                    <tr><th><label for="fallback_url">لینک پشتیبان (فوتبالی)</label></th><td><input name="fallback_url" id="fallback_url" type="url" class="large-text" placeholder="https://footballi.net/competition/..."><p class="description">فقط وقتی فوتبال۳۶۰ قطع باشد استفاده می‌شود.</p></td></tr>
                     <tr><th><label for="html_file">فایل HTML</label></th><td><input name="html_file" id="html_file" type="file" accept=".html,.htm"><p class="description">اگر لینک مستقیم کار نکرد، HTML ذخیره‌شده صفحه مرجع را آپلود کنید.</p></td></tr>
                     <tr><th><label for="json_file">فایل JSON</label></th><td><input name="json_file" id="json_file" type="file" accept=".json,application/json"><p class="description">اختیاری؛ فایل JSON بازی‌ها یا داده لیگ.</p></td></tr>
                     <tr><th>وضعیت</th><td><label><input type="checkbox" name="enabled" value="1" checked> فعال باشد</label></td></tr>
@@ -391,46 +394,10 @@ class F360LS_Admin {
     }
 
     private function quick_leagues(): array {
-        return [
-            ['id'=>'premier-league','title'=>'لیگ برتر انگلیس','url'=>'https://footballi.net/competition/9'],
-            ['id'=>'laliga','title'=>'لالیگا اسپانیا','url'=>'https://footballi.net/competition/21'],
-            ['id'=>'serie-a','title'=>'سری آ ایتالیا','url'=>'https://footballi.net/competition/17'],
-            ['id'=>'bundesliga','title'=>'بوندس لیگای آلمان','url'=>'https://footballi.net/competition/12'],
-            ['id'=>'persian-gulf-pro-league','title'=>'لیگ برتر ایران','url'=>'https://footballi.net/competition/14'],
-            ['id'=>'ligue-1','title'=>'لیگ 1 فرانسه','url'=>'https://footballi.net/competition/11'],
-            ['id'=>'champions-league','title'=>'لیگ قهرمانان اروپا','url'=>'https://footballi.net/competition/3'],
-            ['id'=>'europa-league','title'=>'لیگ اروپا','url'=>'https://footballi.net/competition/4'],
-            ['id'=>'conference-league','title'=>'لیگ کنفرانس اروپا','url'=>''],
-            ['id'=>'elite-asia','title'=>'لیگ نخبگان آسیا','url'=>'https://footballi.net/competition/25'],
-            ['id'=>'acl-two','title'=>'لیگ قهرمانان 2 آسیا','url'=>'https://footballi.net/competition/147'],
-            ['id'=>'championship','title'=>'چمپیونشیپ انگلیس','url'=>''],
-            ['id'=>'bundesliga-2','title'=>'بوندس لیگای 2 آلمان','url'=>''],
-            ['id'=>'scottish-premiership','title'=>'پریمیرشیپ اسکاتلند','url'=>''],
-            ['id'=>'primeira-liga','title'=>'لیگ برتر پرتغال','url'=>''],
-            ['id'=>'eredivisie','title'=>'اردیویسه هلند','url'=>''],
-            ['id'=>'fa-cup','title'=>'جام حذفی انگلیس','url'=>''],
-            ['id'=>'efl-cup','title'=>'جام اتحادیه انگلیس','url'=>'https://footballi.net/competition/60'],
-            ['id'=>'dfb-pokal','title'=>'جام حذفی آلمان','url'=>''],
-            ['id'=>'copa-del-rey','title'=>'جام حذفی اسپانیا','url'=>''],
-            ['id'=>'coppa-italia','title'=>'جام حذفی ایتالیا','url'=>''],
-            ['id'=>'coupe-de-france','title'=>'جام حذفی فرانسه','url'=>''],
-            ['id'=>'saudi-pro-league','title'=>'لیگ برتر عربستان','url'=>'https://footballi.net/competition/104'],
-            ['id'=>'uae-pro-league','title'=>'لیگ برتر امارات','url'=>''],
-            ['id'=>'qatar-stars-league','title'=>'لیگ ستارگان قطر','url'=>''],
-            ['id'=>'world-cup-qualifying-asia','title'=>'انتخابی جام جهانی آسیا','url'=>''],
-            ['id'=>'world-cup-qualifying-europe','title'=>'انتخابی جام جهانی اروپا','url'=>''],
-            ['id'=>'world-cup-qualifying-africa','title'=>'انتخابی جام جهانی آفریقا','url'=>''],
-            ['id'=>'world-cup-qualifying-south-america','title'=>'انتخابی جام جهانی آمریکای جنوبی','url'=>''],
-            ['id'=>'world-cup-qualifying-north-america','title'=>'انتخابی جام جهانی آمریکای شمالی','url'=>''],
-            ['id'=>'uefa-nations-league','title'=>'لیگ ملت های اروپا','url'=>'https://footballi.net/competition/83'],
-            ['id'=>'afc-asian-cup','title'=>'جام ملت های آسیا','url'=>''],
-            ['id'=>'uefa-euro','title'=>'جام ملت های اروپا','url'=>''],
-            ['id'=>'africa-cup-of-nations','title'=>'جام ملت های آفریقا','url'=>''],
-            ['id'=>'copa-america','title'=>'کوپا آمریکا','url'=>''],
-        ];
+        return F360LS_Repository::instance()->catalog_leagues();
     }
     private function default_settings(): array {
-        return ['default_theme'=>'light','accent_color'=>'#16a34a','accent2_color'=>'#22c55e','background_color'=>'#f4f7fb','card_color'=>'#ffffff','text_color'=>'#0f172a','radius'=>'32','density'=>'comfortable','show_source'=>'0','show_hero'=>'1','auto_refresh'=>'0','hourly_cron'=>'1','refresh_interval'=>'60','live_cache_ttl'=>'45','default_cache_ttl'=>'21600','allowed_domains'=>"footballi.net\nfootball360.ir\ncdn.oddrun.ir",'custom_font_url'=>'','animations'=>'1'];
+        return ['default_theme'=>'light','accent_color'=>'#16a34a','accent2_color'=>'#22c55e','background_color'=>'#f4f7fb','card_color'=>'#ffffff','text_color'=>'#0f172a','radius'=>'32','density'=>'comfortable','show_source'=>'0','show_hero'=>'1','auto_refresh'=>'0','hourly_cron'=>'1','refresh_interval'=>'60','live_cache_ttl'=>'45','default_cache_ttl'=>'21600','allowed_domains'=>"footballi.net\nfootball360.ir\ncdn.oddrun.ir\nstatic.football360.ir",'custom_font_url'=>'','animations'=>'1'];
     }
 
     private function get_settings(): array {
@@ -452,7 +419,7 @@ class F360LS_Admin {
             if ($domain && strpos($domain, '.') !== false) $out[] = $domain;
         }
         $out = array_values(array_unique($out));
-        return implode("\n", $out ?: ['footballi.net','football360.ir','cdn.oddrun.ir']);
+        return implode("\n", $out ?: ['footballi.net','football360.ir','cdn.oddrun.ir','static.football360.ir']);
     }
 
     private function handle_font_upload(array $file): string {
@@ -531,7 +498,7 @@ class F360LS_Admin {
             if ($ext !== 'json') wp_die('فقط فایل JSON مجاز است.');
             $repo->ensure_upload_dir(); $json_file_path = trailingslashit($repo->upload_dir()) . $id . '.json'; move_uploaded_file($_FILES['json_file']['tmp_name'], $json_file_path);
         }
-        $repo->upsert_league(['id'=>$id,'title'=>$title,'subtitle'=>sanitize_text_field(wp_unslash($_POST['subtitle'] ?? '')),'source_url'=>esc_url_raw(wp_unslash($_POST['source_url'] ?? '')),'games_url'=>esc_url_raw(wp_unslash($_POST['games_url'] ?? '')),'table_url'=>esc_url_raw(wp_unslash($_POST['table_url'] ?? '')),'file'=>$file_path,'json_file'=>$json_file_path,'is_plugin_file'=>false,'enabled'=>!empty($_POST['enabled'])]);
+        $repo->upsert_league(['id'=>$id,'title'=>$title,'subtitle'=>sanitize_text_field(wp_unslash($_POST['subtitle'] ?? '')),'source_url'=>esc_url_raw(wp_unslash($_POST['source_url'] ?? '')),'games_url'=>esc_url_raw(wp_unslash($_POST['games_url'] ?? '')),'table_url'=>esc_url_raw(wp_unslash($_POST['table_url'] ?? '')),'statistics_url'=>esc_url_raw(wp_unslash($_POST['statistics_url'] ?? '')),'transfers_url'=>esc_url_raw(wp_unslash($_POST['transfers_url'] ?? '')),'fallback_url'=>esc_url_raw(wp_unslash($_POST['fallback_url'] ?? '')),'file'=>$file_path,'json_file'=>$json_file_path,'is_plugin_file'=>false,'enabled'=>!empty($_POST['enabled'])]);
         $this->redirect('leagues', 'لیگ ذخیره شد و کش پاک شد.');
     }
 
@@ -542,11 +509,25 @@ class F360LS_Admin {
         foreach ($quick as $league) {
             $existing = $repo->get_league($league['id']) ?: [];
             $source_url = $league['url'] ?: ($existing['source_url'] ?? '');
-            $games_url = $league['url'] ?: ($existing['games_url'] ?? '');
-            // Never use the global live-scores feed for a league: it mixes competitions.
+            $fallback_url = $league['fallback'] ?? ($existing['fallback_url'] ?? '');
             if ($source_url === 'https://footballi.net/live-scores') $source_url = '';
-            if ($games_url === 'https://footballi.net/live-scores') $games_url = '';
-            $repo->upsert_league(['id'=>$league['id'],'title'=>$league['title'],'subtitle'=>'','source_url'=>$source_url,'games_url'=>$games_url,'table_url'=>$source_url ? $source_url . '/standing' : '','enabled'=>true,'is_plugin_file'=>false]);
+            $is_f360 = (strpos((string) $source_url, 'football360.ir') !== false);
+            $games_url = $is_f360 ? rtrim($source_url, '/') . '/games' : ($source_url ?: '');
+            $table_url = $is_f360 ? $source_url : ($source_url ? rtrim($source_url, '/') . '/standing' : '');
+            $repo->upsert_league([
+                'id' => $league['id'],
+                'title' => $league['title'],
+                'subtitle' => '',
+                'source_url' => $source_url,
+                'games_url' => $games_url,
+                'table_url' => $table_url,
+                'statistics_url' => $is_f360 ? rtrim($source_url, '/') . '/statistics' : '',
+                'transfers_url' => $is_f360 ? rtrim($source_url, '/') . '/transfers' : '',
+                'fallback_url' => $fallback_url,
+                'logo' => $league['logo'] ?? '',
+                'enabled' => true,
+                'is_plugin_file' => false,
+            ]);
         }
         $ordered = [];
         foreach ($quick as $league) if ($item = $repo->get_league($league['id'])) $ordered[] = $item;

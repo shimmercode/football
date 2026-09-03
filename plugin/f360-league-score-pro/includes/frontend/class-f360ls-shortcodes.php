@@ -132,6 +132,7 @@ public function league_tabs($atts): string {
                     data-f360ls-tab="<?php echo esc_attr($id); ?>"
                     role="tab"
                 >
+                    <?php if (!empty($league['logo'])): ?><img class="f360ls-tab-logo" loading="lazy" decoding="async" src="<?php echo esc_url($league['logo']); ?>" alt=""><?php endif; ?>
                     <span><?php echo esc_html($this->tab_label((string) ($league['title'] ?? $id))); ?></span>
                     <small><?php echo esc_html($id); ?></small>
                 </button>
@@ -459,7 +460,16 @@ public function league_tabs($atts): string {
 
     private function render_toolbar(): string {
         ob_start(); ?>
-        <div class="f360ls-toolbar"><label class="f360ls-search"><span>جستجو</span><input type="search" class="f360ls-search-input" placeholder="نام تیم را جستجو کنید..."></label><div class="f360ls-filter-buttons"><button type="button" class="is-active" data-filter="all">همه</button><button type="button" data-filter="matches">بازی‌ها</button><button type="button" data-filter="standings">جدول</button></div></div>
+        <div class="f360ls-toolbar">
+            <label class="f360ls-search"><span>جستجو</span><input type="search" class="f360ls-search-input" placeholder="نام تیم را جستجو کنید..."></label>
+            <div class="f360ls-filter-buttons f360ls-content-tabs" role="tablist">
+                <button type="button" class="is-active" data-filter="standings">جدول</button>
+                <button type="button" data-filter="live">بازی‌های زنده <i class="f360ls-live-dot" aria-hidden="true"></i></button>
+                <button type="button" data-filter="statistics">آمار و ارقام</button>
+                <button type="button" data-filter="matches">برنامه بازی‌ها</button>
+                <button type="button" data-filter="transfers">نقل و انتقالات</button>
+            </div>
+        </div>
         <?php return ob_get_clean();
     }
 
@@ -471,9 +481,11 @@ public function league_tabs($atts): string {
         $weeks = $data['weeks'] ?? [];
         $standings = $data['standings'] ?? [];
         $top_scorers = $data['top_scorers'] ?? [];
-        $source = $this->source_label($data);
-        $settings = $this->get_settings();
+        $statistics = $data['statistics'] ?? [];
+        $transfers = $data['transfers'] ?? [];
+        $live_weeks = $this->live_weeks($weeks, $matches);
         $subtitle = $this->display_subtitle((string) ($data['subtitle'] ?? ''));
+        $has_any = !empty($matches) || !empty($standings) || !empty($top_scorers) || !empty($statistics) || !empty($transfers);
         ?>
         <div class="f360ls-league-head f360ls-compact-head">
             <div class="f360ls-title-row">
@@ -487,21 +499,27 @@ public function league_tabs($atts): string {
             </div>
         </div>
 
-        <?php if (!empty($matches) || !empty($standings) || !empty($top_scorers)): ?>
-            <div class="f360ls-footballi-board">
-                <aside class="f360ls-board-col f360ls-board-matches" data-content-type="matches">
+        <?php if ($has_any): ?>
+            <div class="f360ls-footballi-board f360ls-content-board" data-f360ls-filter="standings">
+                <main class="f360ls-board-col f360ls-board-standings" data-content-type="standings">
+                    <div class="f360ls-board-title">جدول رده‌بندی</div>
+                    <?php echo !empty($standings) ? $this->render_standings_table($standings) : '<div class="f360ls-empty">جدولی برای این رقابت پیدا نشد.</div>'; ?>
+                </main>
+                <aside class="f360ls-board-col f360ls-board-live f360ls-is-hidden" data-content-type="live">
+                    <div class="f360ls-board-title">بازی‌های زنده</div>
+                    <?php echo !empty($live_weeks) ? $this->render_matches_column($live_weeks, true) : '<div class="f360ls-empty">فعلاً بازی زنده‌ای در این رقابت نیست.</div>'; ?>
+                </aside>
+                <aside class="f360ls-board-col f360ls-board-scorers f360ls-is-hidden" data-content-type="statistics">
+                    <div class="f360ls-board-title">آمار و ارقام</div>
+                    <?php echo $this->render_statistics_box($statistics, $top_scorers); ?>
+                </aside>
+                <aside class="f360ls-board-col f360ls-board-matches f360ls-is-hidden" data-content-type="matches">
                     <div class="f360ls-board-title">برنامه بازی‌ها</div>
                     <?php echo !empty($matches) ? $this->render_matches_column($weeks) : '<div class="f360ls-empty">بازی‌ای برای نمایش پیدا نشد.</div>'; ?>
                 </aside>
-
-                <main class="f360ls-board-col f360ls-board-standings" data-content-type="standings">
-                    <div class="f360ls-board-title">جدول رده‌بندی تیم‌ها</div>
-                    <?php echo !empty($standings) ? $this->render_standings_table($standings) : '<div class="f360ls-empty">جدولی برای این رقابت پیدا نشد.</div>'; ?>
-                </main>
-
-                <aside class="f360ls-board-col f360ls-board-scorers" data-content-type="scorers">
-                    <div class="f360ls-board-title">برترین‌های فصل</div>
-                    <?php echo $this->render_top_scorers_box($top_scorers); ?>
+                <aside class="f360ls-board-col f360ls-board-transfers f360ls-is-hidden" data-content-type="transfers">
+                    <div class="f360ls-board-title">نقل و انتقالات</div>
+                    <?php echo $this->render_transfers_box($transfers); ?>
                 </aside>
             </div>
         <?php else: ?>
@@ -515,8 +533,9 @@ public function league_tabs($atts): string {
 
     private function render_standings_table(array $standings): string {
         $last_group = null;
+        $total = count($standings);
         ob_start(); ?>
-        <div class="f360ls-table-scroll"><table class="f360ls-standings-table"><thead><tr><th></th><th>تیم</th><th>بازی</th><th>برد</th><th>مساوی</th><th>باخت</th><th>تفاضل</th><th>گل +/-</th><th>امتیاز</th></tr></thead><tbody>
+        <div class="f360ls-table-scroll f360ls-table-creative"><table class="f360ls-standings-table"><thead><tr><th>رتبه</th><th>تیم</th><th>بازی</th><th>برد</th><th>مساوی</th><th>باخت</th><th>تفاضل</th><th>گل +/-</th><th>امتیاز</th></tr></thead><tbody>
             <?php $display_rank = 0; $used_ranks = []; foreach ($standings as $row):
                 $group = $row['group'] ?? '';
                 if ($group && $group !== $last_group): $last_group = $group; $display_rank = 0; $used_ranks = []; ?>
@@ -525,30 +544,44 @@ public function league_tabs($atts): string {
                 $source_rank = intval($row['rank'] ?? 0);
                 $display_rank++;
                 $rank = ($source_rank > 0 && !isset($used_ranks[$source_rank])) ? $source_rank : $display_rank;
-                $used_ranks[$rank] = true; ?>
-                <tr class="<?php echo $rank > 0 && $rank <= 3 ? 'is-top-rank' : ''; ?>" data-search="<?php echo esc_attr($row['team'] ?? ''); ?>">
-                    <td class="rank"><span><?php echo esc_html($rank); ?></span></td>
+                $used_ranks[$rank] = true;
+                $medal = $rank === 1 ? 'is-gold' : ($rank === 2 ? 'is-silver' : ($rank === 3 ? 'is-bronze' : ''));
+                $zone = '';
+                if ($rank > 0 && $rank <= 4) $zone = 'is-zone-europe';
+                elseif ($total >= 10 && $rank >= $total - 2) $zone = 'is-zone-relegation';
+                ?>
+                <tr class="<?php echo esc_attr(trim(($rank > 0 && $rank <= 3 ? 'is-top-rank ' : '') . $zone)); ?>" data-search="<?php echo esc_attr($row['team'] ?? ''); ?>">
+                    <td class="rank"><span class="<?php echo esc_attr($medal); ?>"><?php echo esc_html($rank); ?></span></td>
                     <td class="team"><?php if (!empty($row['logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($row['logo']); ?>" alt="<?php echo esc_attr($row['team']); ?>"><?php endif; ?><span><?php echo esc_html($row['team'] ?? ''); ?></span><i class="move move-<?php echo esc_attr($row['movement'] ?? 'equal'); ?>"></i></td>
-                    <td><?php echo esc_html($row['played'] ?? ''); ?></td><td><?php echo esc_html($row['won'] ?? ''); ?></td><td><?php echo esc_html($row['draw'] ?? ''); ?></td><td><?php echo esc_html($row['lost'] ?? ''); ?></td><td><?php echo esc_html($row['diff'] ?? ''); ?></td><td><?php echo esc_html($row['goals'] ?? ''); ?></td><td class="points"><?php echo esc_html($row['points'] ?? ''); ?></td>
+                    <td><?php echo esc_html($row['played'] ?? ''); ?></td><td><?php echo esc_html($row['won'] ?? ''); ?></td><td><?php echo esc_html($row['draw'] ?? ''); ?></td><td><?php echo esc_html($row['lost'] ?? ''); ?></td><td><?php echo esc_html($row['diff'] ?? ''); ?></td><td><?php echo esc_html($row['goals'] ?? ''); ?></td><td class="points"><em><?php echo esc_html($row['points'] ?? ''); ?></em></td>
                 </tr>
             <?php endforeach; ?>
         </tbody></table></div><?php return ob_get_clean();
     }
 
-    private function render_matches_column(array $weeks): string {
+    private function render_matches_column(array $weeks, bool $live_only = false): string {
         ob_start(); ?>
         <div class="f360ls-vertical-matches">
             <?php foreach ($weeks as $week): $shown_date = ''; ?>
                 <div class="f360ls-vertical-week">
                     <?php foreach (($week['matches'] ?? []) as $m):
+                        if ($live_only && (($m['status_type'] ?? '') !== 'live')) continue;
+                        $is_live = (($m['status_type'] ?? '') === 'live');
                         $match_date = $this->match_date_label((string) ($m['date'] ?? ''));
                         if ($match_date !== '' && $match_date !== $shown_date): $shown_date = $match_date; ?>
                             <h4><?php echo esc_html($match_date); ?></h4>
                         <?php elseif ($shown_date === '' && !empty($week['title'])): $shown_date = '__week__'; ?>
                             <h4><?php echo esc_html($week['title']); ?></h4>
                         <?php endif; ?>
-                        <article class="f360ls-vertical-match" data-search="<?php echo esc_attr(($m['home'] ?? '') . ' ' . ($m['away'] ?? '')); ?>">
-                            <div class="f360ls-match-date"><?php echo esc_html($m['status'] ?? ''); ?></div>
+                        <article class="f360ls-vertical-match <?php echo $is_live ? 'is-live' : ''; ?>" data-search="<?php echo esc_attr(($m['home'] ?? '') . ' ' . ($m['away'] ?? '')); ?>">
+                            <div class="f360ls-match-date">
+                                <?php if ($is_live): ?>
+                                    <span class="f360ls-live-badge">زنده</span>
+                                    <?php if (!empty($m['minute'])): ?><span class="f360ls-live-minute">دقیقه <?php echo esc_html($m['minute']); ?></span><?php endif; ?>
+                                <?php else: ?>
+                                    <?php echo esc_html($m['status'] ?? ''); ?>
+                                <?php endif; ?>
+                            </div>
                             <div class="f360ls-match-teams-row">
                                 <span><?php echo esc_html($m['home'] ?? ''); ?></span><?php if (!empty($m['home_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($m['home_logo']); ?>" alt="<?php echo esc_attr($m['home']); ?>"><?php endif; ?>
                             </div>
@@ -563,6 +596,61 @@ public function league_tabs($atts): string {
         </div><?php return ob_get_clean();
     }
     
+
+    private function live_weeks(array $weeks, array $matches): array {
+        $out = [];
+        foreach ($weeks as $week) {
+            $live = array_values(array_filter($week['matches'] ?? [], fn($m) => ($m['status_type'] ?? '') === 'live'));
+            if ($live) $out[] = ['title' => $week['title'] ?? 'زنده', 'matches' => $live];
+        }
+        if (!$out && $matches) {
+            $live = array_values(array_filter($matches, fn($m) => ($m['status_type'] ?? '') === 'live'));
+            if ($live) $out[] = ['title' => 'زنده', 'matches' => $live];
+        }
+        return $out;
+    }
+
+    private function render_statistics_box(array $statistics, array $top_scorers): string {
+        if (empty($statistics) && !empty($top_scorers)) {
+            $statistics = [['key' => 'goals', 'title' => 'گل', 'rows' => $top_scorers]];
+        }
+        if (empty($statistics)) return '<div class="f360ls-empty">موردی پیدا نشد</div>';
+        ob_start(); ?>
+        <div class="f360ls-statistics-stack">
+            <?php foreach ($statistics as $group):
+                $rows = $group['rows'] ?? [];
+                if (!$rows) continue; ?>
+                <section class="f360ls-stat-group">
+                    <h4><?php echo esc_html($group['title'] ?? ''); ?></h4>
+                    <?php echo $this->render_top_scorers_box($rows); ?>
+                </section>
+            <?php endforeach; ?>
+        </div>
+        <?php return ob_get_clean();
+    }
+
+    private function render_transfers_box(array $transfers): string {
+        if (empty($transfers)) return '<div class="f360ls-empty">موردی پیدا نشد</div>';
+        ob_start(); ?>
+        <div class="f360ls-transfer-list">
+            <?php foreach ($transfers as $row): ?>
+                <article class="f360ls-transfer-row" data-search="<?php echo esc_attr(($row['player'] ?? '') . ' ' . ($row['from'] ?? '') . ' ' . ($row['to'] ?? '')); ?>">
+                    <?php if (!empty($row['photo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($row['photo']); ?>" alt="<?php echo esc_attr($row['player'] ?? ''); ?>"><?php else: ?><span class="f360ls-player-placeholder">👤</span><?php endif; ?>
+                    <div class="f360ls-transfer-meta">
+                        <strong><?php echo esc_html($row['player'] ?? ''); ?></strong>
+                        <small><?php echo esc_html($row['type'] ?? 'انتقال'); ?><?php if (!empty($row['date'])): ?> · <?php echo esc_html($row['date']); ?><?php endif; ?></small>
+                    </div>
+                    <div class="f360ls-transfer-clubs">
+                        <span><?php if (!empty($row['from_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($row['from_logo']); ?>" alt=""><?php endif; ?><?php echo esc_html($row['from'] ?? 'نامشخص'); ?></span>
+                        <b>←</b>
+                        <span><?php if (!empty($row['to_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($row['to_logo']); ?>" alt=""><?php endif; ?><?php echo esc_html($row['to'] ?? 'نامشخص'); ?></span>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+        </div>
+        <?php return ob_get_clean();
+    }
+
   private function render_top_scorers_box(array $rows): string {
     // فقط داده‌های گل نمایش داده می‌شود؛ تب پاس گل و مجموع حذف شده‌اند.
     $goal_rows = array_values(array_filter($rows, function($row) {
@@ -636,7 +724,7 @@ public function league_tabs($atts): string {
         ob_start(); ?>
         <div class="f360ls-match-list">
             <?php foreach ($matches as $m): $teams = trim(($m['home'] ?? '') . '|' . ($m['away'] ?? '')); ?>
-                <article class="f360ls-match-card" data-search="<?php echo esc_attr(($m['home'] ?? '') . ' ' . ($m['away'] ?? '')); ?>" <?php echo $favoriteAware ? 'data-f360ls-match-teams="' . esc_attr($teams) . '"' : ''; ?>><div class="team home"><?php if (!empty($m['home_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($m['home_logo']); ?>" alt="<?php echo esc_attr($m['home']); ?>"><?php endif; ?><span><?php echo esc_html($m['home'] ?? ''); ?></span></div><div class="scorebox"><span class="score"><?php echo esc_html($m['score'] ?? '—'); ?></span><small class="status status-<?php echo esc_attr($m['status_type'] ?? 'scheduled'); ?>"><i></i><?php echo esc_html($m['status'] ?? ''); ?></small><?php if (!empty($m['league_title'])): ?><small class="f360ls-match-league"><?php echo esc_html($m['league_title']); ?></small><?php endif; ?><?php if (!empty($m['href'])): ?><a class="f360ls-match-link" href="<?php echo esc_url($m['href']); ?>" target="_blank" rel="nofollow noopener">جزئیات</a><?php endif; ?></div><div class="team away"><?php if (!empty($m['away_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($m['away_logo']); ?>" alt="<?php echo esc_attr($m['away']); ?>"><?php endif; ?><span><?php echo esc_html($m['away'] ?? ''); ?></span></div></article>
+                <article class="f360ls-match-card <?php echo (($m['status_type'] ?? '') === 'live') ? 'is-live' : ''; ?>" data-search="<?php echo esc_attr(($m['home'] ?? '') . ' ' . ($m['away'] ?? '')); ?>" <?php echo $favoriteAware ? 'data-f360ls-match-teams="' . esc_attr($teams) . '"' : ''; ?>><div class="team home"><?php if (!empty($m['home_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($m['home_logo']); ?>" alt="<?php echo esc_attr($m['home']); ?>"><?php endif; ?><span><?php echo esc_html($m['home'] ?? ''); ?></span></div><div class="scorebox"><?php if (($m['status_type'] ?? '') === 'live'): ?><span class="f360ls-live-badge">زنده</span><?php endif; ?><span class="score"><?php echo esc_html($m['score'] ?? '—'); ?></span><small class="status status-<?php echo esc_attr($m['status_type'] ?? 'scheduled'); ?>"><i></i><?php echo (($m['status_type'] ?? '') === 'live' && !empty($m['minute'])) ? 'دقیقه ' . esc_html($m['minute']) : esc_html($m['status'] ?? ''); ?></small><?php if (!empty($m['league_title'])): ?><small class="f360ls-match-league"><?php echo esc_html($m['league_title']); ?></small><?php endif; ?></div><div class="team away"><?php if (!empty($m['away_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($m['away_logo']); ?>" alt="<?php echo esc_attr($m['away']); ?>"><?php endif; ?><span><?php echo esc_html($m['away'] ?? ''); ?></span></div></article>
             <?php endforeach; ?>
         </div><?php return ob_get_clean();
     }

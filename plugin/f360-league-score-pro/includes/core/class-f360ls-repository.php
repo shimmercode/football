@@ -53,6 +53,10 @@ class F360LS_Repository {
             'source_url' => '',
             'games_url' => '',
             'table_url' => '',
+            'statistics_url' => '',
+            'transfers_url' => '',
+            'fallback_url' => '',
+            'logo' => '',
             'file' => '',
             'games_file' => '',
             'table_file' => '',
@@ -116,6 +120,9 @@ class F360LS_Repository {
         $payload['source_url'] = $league['source_url'] ?? '';
         $payload['games_url'] = $league['games_url'] ?? '';
         $payload['table_url'] = $league['table_url'] ?? '';
+        $payload['statistics_url'] = $league['statistics_url'] ?? '';
+        $payload['transfers_url'] = $league['transfers_url'] ?? '';
+        $payload['fallback_url'] = $league['fallback_url'] ?? '';
         $payload['file'] = $league['file'] ?? '';
         $payload['json_file'] = $league['json_file'] ?? '';
         $payload['source_messages'] = [];
@@ -132,7 +139,11 @@ class F360LS_Repository {
                 } else {
                     $html = $source['html'] ?? '';
                     if (!$html) continue;
-                    if (class_exists('F360LS_Footballi_Parser') && F360LS_Footballi_Parser::looks_like($html, $source)) {
+                    $source_url = (string) ($source['url'] ?? '');
+                    $use_footballi = (strpos($source_url, 'football360.ir') === false)
+                        && class_exists('F360LS_Footballi_Parser')
+                        && F360LS_Footballi_Parser::looks_like($html, $source);
+                    if ($use_footballi) {
                         $parser = new F360LS_Footballi_Parser($html, $source);
                         $data = $parser->parse($league);
                     } else {
@@ -157,13 +168,18 @@ class F360LS_Repository {
             $payload['league']['title'] = $league['title'] ?? $league['id'];
         }
 
+        if (empty($payload['league']['logo'])) {
+            $catalog = $this->catalog_by_id($id);
+            if (!empty($catalog['logo'])) $payload['league']['logo'] = $catalog['logo'];
+        }
+        $payload = $this->prefer_football360_logos($payload);
         $payload = $this->apply_logo_overrides($payload);
         $payload['stats'] = $this->build_stats($payload);
         if (empty($payload['last_update'])) {
             $payload['last_update'] = $this->fallback_last_update($league, $sources);
         }
 
-        if (empty($payload['matches']) && empty($payload['standings']) && empty($payload['message'])) {
+        if (empty($payload['matches']) && empty($payload['standings']) && empty($payload['transfers']) && empty($payload['statistics']) && empty($payload['message'])) {
             $payload['message'] = 'داده قابل نمایش پیدا نشد. لینک/فایل لیگ یا نتایج زنده را بروزرسانی کنید.';
         }
 
@@ -204,34 +220,161 @@ class F360LS_Repository {
             }
         }
 
-        $urls = [];
-        foreach (['source_url', 'games_url', 'table_url'] as $key) {
-            if (!empty($league[$key])) $urls[$key] = esc_url_raw($league[$key]);
-        }
-
-        if (!empty($league['source_url'])) {
-            $derived_games = $this->derive_games_url($league['source_url']);
-            if ($derived_games) $urls['derived_games_url'] = $derived_games;
-        }
-
-        // Built-in fallback for the common Premier League tab, so old installations
-        // that only uploaded the table HTML can still load matches from the /games page.
-        if (empty($urls) && !empty($league['id']) && $league['id'] === 'premier-league') {
-            $urls['builtin_premier_games'] = 'https://football360.ir/league/fcec7abb-dead-49c3-a907-1948e33fa438/20252026-Premier-League/games';
-        }
-
-        foreach ($urls as $kind => $url) {
-            if (!$url || !wp_http_validate_url($url)) continue;
-            // The public live-scores page contains every competition. It must never
-            // be treated as a source for one particular league.
-            if (preg_match('~footballi\.net/live-scores/?(?:[?#].*)?$~i', $url)) continue;
-            $html = $this->fetch_url($url);
+        $resolved = $this->resolve_remote_urls($league);
+        $got_primary = false;
+        foreach ($resolved['primary'] as $kind => $url) {
+            $html = $this->fetch_allowed_league_url($url);
             if ($html) {
+                $got_primary = true;
                 $sources[] = ['type' => 'url', 'kind' => $kind, 'url' => $url, 'html' => $html, 'mtime' => time()];
             }
         }
 
+        if (!$got_primary) {
+            foreach ($resolved['fallback'] as $kind => $url) {
+                $html = $this->fetch_allowed_league_url($url);
+                if ($html) {
+                    $sources[] = ['type' => 'url', 'kind' => $kind, 'url' => $url, 'html' => $html, 'mtime' => time()];
+                }
+            }
+        }
+
         return $sources;
+    }
+
+    private function fetch_allowed_league_url(string $url): string {
+        if (!$url || !wp_http_validate_url($url)) return '';
+        if ($this->is_generic_mixed_feed($url)) return '';
+        return $this->fetch_url($url);
+    }
+
+    private function is_generic_mixed_feed(string $url): bool {
+        return (bool) preg_match('~footballi\\.net/live-scores/?(?:[?#].*)?$~i', $url)
+            || (bool) preg_match('~football360\\.ir/(?:results|league/(?:table|statistics|matches|transfer))/?$~i', $url);
+    }
+
+    private function resolve_remote_urls(array $league): array {
+        $catalog = $this->catalog_by_id((string) ($league['id'] ?? ''));
+        $source = esc_url_raw((string) ($league['source_url'] ?? ''));
+        $games = esc_url_raw((string) ($league['games_url'] ?? ''));
+        $table = esc_url_raw((string) ($league['table_url'] ?? ''));
+        $statistics = esc_url_raw((string) ($league['statistics_url'] ?? ''));
+        $transfers = esc_url_raw((string) ($league['transfers_url'] ?? ''));
+        $fallback = esc_url_raw((string) ($league['fallback_url'] ?? ''));
+
+        if ($this->is_footballi_host($source) && empty($fallback)) $fallback = $source;
+        if ($this->is_football360_host($source) && $this->is_generic_mixed_feed($source)) $source = '';
+
+        $f360_base = '';
+        if ($this->is_football360_host($source) && !$this->is_generic_mixed_feed($source)) {
+            $f360_base = $this->football360_base($source);
+        } elseif (!empty($catalog['url'])) {
+            $f360_base = $this->football360_base($catalog['url']);
+        }
+
+        if (!$fallback && !empty($catalog['fallback'])) $fallback = $catalog['fallback'];
+        if (!$fallback && $this->is_footballi_host($games)) $fallback = $games;
+
+        $primary = [];
+        if ($f360_base) {
+            $primary['source_url'] = $f360_base;
+            $primary['table_url'] = ($table && $this->is_football360_host($table) && !$this->is_generic_mixed_feed($table)) ? $table : $f360_base;
+            $primary['games_url'] = ($games && $this->is_football360_host($games) && !$this->is_generic_mixed_feed($games)) ? $games : ($f360_base . '/games');
+            $primary['statistics_url'] = ($statistics && $this->is_football360_host($statistics)) ? $statistics : ($f360_base . '/statistics');
+            $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
+        } else {
+            foreach (['source_url' => $source, 'games_url' => $games, 'table_url' => $table, 'statistics_url' => $statistics, 'transfers_url' => $transfers] as $kind => $url) {
+                if ($url && $this->is_football360_host($url) && !$this->is_generic_mixed_feed($url)) $primary[$kind] = $url;
+            }
+        }
+
+        $fallback_urls = [];
+        if ($fallback && $this->is_footballi_host($fallback) && !$this->is_generic_mixed_feed($fallback)) {
+            $fallback_urls['fallback_url'] = $fallback;
+            $fallback_urls['fallback_table'] = rtrim($fallback, '/') . '/standing';
+        }
+
+        return [
+            'primary' => $this->unique_url_map($primary),
+            'fallback' => $this->unique_url_map($fallback_urls),
+        ];
+    }
+
+    private function unique_url_map(array $urls): array {
+        $out = [];
+        $seen = [];
+        foreach ($urls as $kind => $url) {
+            $url = esc_url_raw((string) $url);
+            if (!$url) continue;
+            $key = strtolower(rtrim($url, '/'));
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+            $out[$kind] = $url;
+        }
+        return $out;
+    }
+
+    private function football360_base(string $url): string {
+        $url = preg_replace('/[?#].*$/', '', trim($url));
+        $url = preg_replace('~/(games|table|statistics(?:/players|/teams)?|transfers|transfer|matches|post)/?$~', '', $url);
+        return rtrim((string) $url, '/');
+    }
+
+    private function is_football360_host(string $url): bool {
+        $host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
+        return in_array($host, ['football360.ir', 'www.football360.ir', 'static.football360.ir'], true);
+    }
+
+    private function is_footballi_host(string $url): bool {
+        $host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
+        return in_array($host, ['footballi.net', 'www.footballi.net', 'cdn.oddrun.ir'], true);
+    }
+
+    public function catalog_by_id(string $id): array {
+        foreach ($this->catalog_leagues() as $item) {
+            if (($item['id'] ?? '') === $id) return $item;
+        }
+        return [];
+    }
+
+    public function catalog_leagues(): array {
+        return [
+            ['id'=>'premier-league','title'=>'لیگ برتر انگلیس','url'=>'https://football360.ir/league/fcec7abb-dead-49c3-a907-1948e33fa438/20262027-Premier-League','fallback'=>'https://footballi.net/competition/9','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%84%DB%8C%DA%AF_%D8%A8%D8%B1_QZ0Pc5c.png'],
+            ['id'=>'laliga','title'=>'لالیگا اسپانیا','url'=>'https://football360.ir/league/a0807949-8c10-42c3-a6c1-4a976faf2403/20262027-La-Liga','fallback'=>'https://footballi.net/competition/21','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2023/08/01/87.png'],
+            ['id'=>'serie-a','title'=>'سری آ ایتالیا','url'=>'https://football360.ir/league/9b0bf5c1-a71a-4381-af8c-a8e17c832903/20262027-Serie-A','fallback'=>'https://footballi.net/competition/17','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D8%B3%D8%B1%DB%8C_%D8%A2__XRBG0Aj.png'],
+            ['id'=>'bundesliga','title'=>'بوندس لیگای آلمان','url'=>'https://football360.ir/league/1f198942-2871-4759-a9b1-e89799b3b241/20262027-Bundesliga','fallback'=>'https://footballi.net/competition/12','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D8%A8%D9%88%D9%86%D8%AF%D8%B3%D9%84_8XGRH47.png'],
+            ['id'=>'persian-gulf-pro-league','title'=>'لیگ برتر ایران','url'=>'https://football360.ir/league/a904ddf6-5df3-43b8-b5fb-15601e4a78ac/Persian-Gulf-20262027','fallback'=>'https://footballi.net/competition/14','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%84%DB%8C%DA%AF_%D8%A8%D8%B1_E1ywpuF.png'],
+            ['id'=>'ligue-1','title'=>'لیگ 1 فرانسه','url'=>'https://football360.ir/league/860450b3-ec43-41ee-a54f-0c4f58154168/20262027-Ligue-1','fallback'=>'https://footballi.net/competition/11','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2024/08/11/leauge1.png'],
+            ['id'=>'champions-league','title'=>'لیگ قهرمانان اروپا','url'=>'https://football360.ir/league/cee530a2-f168-4476-b4af-fed1aea1ec77/20262027-Champions-League','fallback'=>'https://footballi.net/competition/3','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%84%DB%8C%DA%AF_%D9%82%D9%87_YxUu6cD.png'],
+            ['id'=>'europa-league','title'=>'لیگ اروپا','url'=>'https://football360.ir/league/9d57d1c4-7ee2-462d-9cb5-2d081bc491ce/20262027-Europa-League','fallback'=>'https://footballi.net/competition/4','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%84%DB%8C%DA%AF_%D8%A7%D8%B1%D9%88%D9%BE%D8%A7-min.png'],
+            ['id'=>'conference-league','title'=>'لیگ کنفرانس اروپا','url'=>'https://football360.ir/league/1460bb64-551c-4f02-a1f7-aad6966d2ec8/20262027-Europa-Conference-League','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%84%DB%8C%DA%AF_%DA%A9%D9%86_yKydPgj.png'],
+            ['id'=>'elite-asia','title'=>'لیگ نخبگان آسیا','url'=>'https://football360.ir/league/8fa68064-6620-49c9-85ba-61d5abef1804/20262027-AFC-Champions-League-Elite','fallback'=>'https://footballi.net/competition/25','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2024/07/27/AFC_ELITE.png'],
+            ['id'=>'acl-two','title'=>'لیگ قهرمانان 2 آسیا','url'=>'https://football360.ir/league/49f36cc3-6398-484e-af71-dbe1a1cf4f34/20262027-AFC-Champions-League-Two','fallback'=>'https://footballi.net/competition/147','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2024/07/27/9469.png'],
+            ['id'=>'championship','title'=>'چمپیونشیپ انگلیس','url'=>'https://football360.ir/league/7ba82869-3e89-40bd-b555-231344c867db/20262027-Championship','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2023/04/25/championship.png'],
+            ['id'=>'bundesliga-2','title'=>'بوندس لیگای 2 آلمان','url'=>'','fallback'=>'','logo'=>''],
+            ['id'=>'scottish-premiership','title'=>'پریمیرشیپ اسکاتلند','url'=>'','fallback'=>'','logo'=>''],
+            ['id'=>'primeira-liga','title'=>'لیگ برتر پرتغال','url'=>'https://football360.ir/league/029ebb8a-e0a1-4d1a-9880-5294f5489a64/20262027-Liga-Portugal','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%84%DB%8C%DA%AF_%D8%A8%D8%B1_OwiYAfm.png'],
+            ['id'=>'eredivisie','title'=>'اردیویسه هلند','url'=>'https://football360.ir/league/702eba10-ecda-4237-8be1-d651a144e92d/20262027-Eredivisie','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%84%DB%8C%DA%AF_%D8%A8%D8%B1_hPDSb6R.png'],
+            ['id'=>'fa-cup','title'=>'جام حذفی انگلیس','url'=>'https://football360.ir/league/1c838474-e568-47b5-89d9-cbff60f691d8/20262027-FA-Cup','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D8%AC%D8%A7%D9%85_%D8%AD%D8%B0_eS1Jvfr.png'],
+            ['id'=>'efl-cup','title'=>'جام اتحادیه انگلیس','url'=>'https://football360.ir/league/8745632f-6fcd-423e-861c-11f4afa43970/20262027-Carabao-Cup','fallback'=>'https://footballi.net/competition/60','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2023/02/26/%D9%84%D9%88%DA%AF%D9%88_%D8%A7_AkjvxCj.png'],
+            ['id'=>'dfb-pokal','title'=>'جام حذفی آلمان','url'=>'https://football360.ir/league/2314167d-652b-4feb-bbf0-03cc5d0bd0ab/20262027-DFB-Pokal','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D8%AC%D8%A7%D9%85_%D8%AD%D8%B0_MXRsDea.png'],
+            ['id'=>'copa-del-rey','title'=>'جام حذفی اسپانیا','url'=>'https://football360.ir/league/e217d643-8255-48a6-bdba-946057e1cd7f/20262027-Copa-Del-Rey','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D8%AC%D8%A7%D9%85_%D8%AC%D8%B0_8DD3oIf.png'],
+            ['id'=>'coppa-italia','title'=>'جام حذفی ایتالیا','url'=>'https://football360.ir/league/bf6c32b0-4bfb-4f77-8882-3d70086435b2/20262027-Coppa-Italia','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D8%AC%D8%A7%D9%85_%D8%AD%D8%B0_47rLyjY.png'],
+            ['id'=>'coupe-de-france','title'=>'جام حذفی فرانسه','url'=>'https://football360.ir/league/5078dfc1-74e0-419c-8d95-4eedee619c68/20262027-Coupe-de-France','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D8%AC%D8%A7%D9%85_%D8%AD%D8%B0_cFisMG2.png'],
+            ['id'=>'saudi-pro-league','title'=>'لیگ برتر عربستان','url'=>'https://football360.ir/league/fc24c7c0-4fea-4765-9997-e626a3e831da/20262027-Pro-League','fallback'=>'https://footballi.net/competition/104','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2023/01/08/%D9%84%DB%8C%DA%AF_%D8%A8%D8%B1_GhhpvCj.png'],
+            ['id'=>'uae-pro-league','title'=>'لیگ برتر امارات','url'=>'https://football360.ir/league/e9571733-6c36-46e7-8385-d31d20b886f3/20262027-UAE-Pro-League','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%84%DB%8C%DA%AF_%D8%A8%D8%B1_VXYwJwp.png'],
+            ['id'=>'qatar-stars-league','title'=>'لیگ ستارگان قطر','url'=>'https://football360.ir/league/e18fdec7-75fe-4b29-bf48-5ff0c2dd7627/20262027-Stars-League','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%84%DB%8C%DA%AF_%D8%B3%D8%AA_otmL6Gk.png'],
+            ['id'=>'world-cup-qualifying-asia','title'=>'انتخابی جام جهانی آسیا','url'=>'https://football360.ir/league/8b19325e-e692-44bb-b5b4-886d9c502094/2026-WC-Qualification-Asia','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2023/10/24/%D9%85%D9%82%D8%AF%D9%85%D8%A7%D8%AA_3A1m4lN.png'],
+            ['id'=>'world-cup-qualifying-europe','title'=>'انتخابی جام جهانی اروپا','url'=>'https://football360.ir/league/ccb863ef-f736-469b-8790-9380c0fdd6f1/2030-WC-Qualification-Europe','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%85%D9%82%D8%AF%D9%85%D8%A7%D8%AA_UP7Grsn.png'],
+            ['id'=>'world-cup-qualifying-africa','title'=>'انتخابی جام جهانی آفریقا','url'=>'https://football360.ir/league/31092ead-62ba-4444-a0c8-420bb8e70992/2026-WC-Qualification-Africa','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%85%D9%82%D8%AF%D9%85%D8%A7%D8%AA_Z3pzMVj.png'],
+            ['id'=>'world-cup-qualifying-south-america','title'=>'انتخابی جام جهانی آمریکای جنوبی','url'=>'https://football360.ir/league/e26d856c-9d70-48f9-be8c-2e5df74507d5/2026-WC-Qualification-South-America','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2023/10/24/%D9%85%D9%82%D8%AF%D9%85%D8%A7%D8%AA_3A1m4lN.png'],
+            ['id'=>'world-cup-qualifying-north-america','title'=>'انتخابی جام جهانی آمریکای شمالی','url'=>'https://football360.ir/league/162185b8-8b59-4260-841f-7f05bf506453/2026-WC-Qualification-Concacaf','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%85%D9%82%D8%AF%D9%85%D8%A7%D8%AA_MKtMv3x.png'],
+            ['id'=>'uefa-nations-league','title'=>'لیگ ملت های اروپا','url'=>'https://football360.ir/league/aabf810f-7e63-48a4-a963-402518fdfb71/20262027-UEFA-Nations-League','fallback'=>'https://footballi.net/competition/83','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2022/12/20/%D9%84%DB%8C%DA%AF_%D9%85%D9%84_sVVrqSK.png'],
+            ['id'=>'afc-asian-cup','title'=>'جام ملت های آسیا','url'=>'https://football360.ir/league/4c62308a-e813-46e0-b451-891a1ff7de66/2023-Asian-Cup','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2023/12/31/UI.png'],
+            ['id'=>'uefa-euro','title'=>'جام ملت های اروپا','url'=>'https://football360.ir/league/b3547cab-8434-4acb-bcdf-759525405a37/2024-European-Championship','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2024/06/02/X.png'],
+            ['id'=>'africa-cup-of-nations','title'=>'جام ملت های آفریقا','url'=>'https://football360.ir/league/b00db526-4618-4a53-b7db-ef28673f5126/2025-Africa-Cup-of-Nations','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2023/07/24/289.png'],
+            ['id'=>'copa-america','title'=>'کوپا آمریکا','url'=>'https://football360.ir/league/c51b8e00-a6e8-447c-97dc-c47fe628a751/2024-Copa-America','fallback'=>'','logo'=>'https://static.football360.ir/nesta2/media/uploads/competitions/2024/06/02/copa.png'],
+        ];
     }
 
     private function fetch_url(string $url): string {
@@ -250,8 +393,7 @@ class F360LS_Repository {
             ],
         ];
         $response = wp_remote_get($url, $args);
-        if (is_wp_error($response) && strpos(strtolower($url), 'footballi.net') !== false) {
-            // Some hosts have outdated CA/cipher bundles; retry without SSL verification for allowed sources.
+        if (is_wp_error($response)) {
             $args['sslverify'] = false;
             $response = wp_remote_get($url, $args);
         }
@@ -276,7 +418,7 @@ class F360LS_Repository {
         if (!$host) return false;
         $host = strtolower((string) $host);
         $settings = get_option(F360LS_OPTION_SETTINGS, []);
-        $allowed = $settings['allowed_domains'] ?? "footballi.net\nfootball360.ir\ncdn.oddrun.ir";
+        $allowed = $settings['allowed_domains'] ?? "footballi.net\nfootball360.ir\ncdn.oddrun.ir\nstatic.football360.ir";
         $domains = array_filter(array_map('trim', preg_split('/\R+|,/', (string) $allowed)));
         foreach ($domains as $domain) {
             $domain = strtolower(ltrim($domain, '.'));
@@ -285,23 +427,13 @@ class F360LS_Repository {
         return false;
     }
 
-    private function derive_games_url(string $url): string {
-        $url = trim($url);
-        if (!$url) return '';
-        if (strpos(strtolower($url), 'footballi.net') !== false) {
-            // Some source pages do not use the /games suffix.
-            return '';
-        }
-        if (preg_match('~/games(?:[/?#]|$)~', $url)) return $url;
-        $url = preg_replace('~/(post|statistics(?:/players|/teams)?|transfers)/?$~', '', $url);
-        return rtrim($url, '/') . '/games';
-    }
-
     private function merge_payloads(array $base, array $data, array $source): array {
+        $from_f360 = $this->is_football360_host((string) ($source['url'] ?? '')) || strpos((string) ($source['url'] ?? ''), 'football360.ir') !== false;
+
         if (!empty($data['league']['title']) && (empty($base['league']['title']) || $source['kind'] !== 'derived_games_url')) {
             $base['league']['title'] = $data['league']['title'];
         }
-        if (!empty($data['league']['logo']) && empty($base['league']['logo'])) {
+        if (!empty($data['league']['logo']) && (empty($base['league']['logo']) || ($from_f360 && $this->is_football360_logo($data['league']['logo'])))) {
             $base['league']['logo'] = $data['league']['logo'];
         }
         if (!empty($data['last_update'])) {
@@ -326,6 +458,12 @@ class F360LS_Repository {
         if (!empty($data['top_scorers'])) {
             $base['top_scorers'] = $this->dedupe_items(array_merge($base['top_scorers'] ?? [], $data['top_scorers']), ['name','goals']);
         }
+        if (!empty($data['statistics'])) {
+            $base['statistics'] = $this->merge_statistics($base['statistics'] ?? [], $data['statistics']);
+        }
+        if (!empty($data['transfers'])) {
+            $base['transfers'] = $this->dedupe_items(array_merge($base['transfers'] ?? [], $data['transfers']), ['player','from','to','type']);
+        }
 
         $base['sources'][] = [
             'type' => $source['type'] ?? '',
@@ -336,13 +474,28 @@ class F360LS_Repository {
         return $base;
     }
 
+    private function merge_statistics(array $old, array $new): array {
+        $by_key = [];
+        foreach (array_merge($old, $new) as $group) {
+            if (!is_array($group)) continue;
+            $key = sanitize_key((string) ($group['key'] ?? $group['title'] ?? ''));
+            if (!$key) continue;
+            $rows = $this->dedupe_items(array_merge($by_key[$key]['rows'] ?? [], $group['rows'] ?? []), ['name','value']);
+            $by_key[$key] = [
+                'key' => $key,
+                'title' => $group['title'] ?? ($by_key[$key]['title'] ?? $key),
+                'rows' => $rows,
+            ];
+        }
+        return array_values($by_key);
+    }
+
     private function merge_weeks(array $old, array $new): array {
         foreach ($new as $week) {
             $matches = $this->dedupe_matches($week['matches'] ?? []);
             if (!$matches) continue;
             $old[] = ['title' => $week['title'] ?? 'بازی‌ها', 'matches' => $matches];
         }
-        // rebuild each week after global dedupe to avoid duplicates on repeated sources
         $seen = [];
         foreach ($old as $wi => $week) {
             $clean = [];
@@ -361,8 +514,6 @@ class F360LS_Repository {
         $out = [];
         $positions = [];
         foreach ($matches as $m) {
-            // A fixture and its later final result are the same match. Keep the final
-            // score instead of retaining the older scheduled “—” entry.
             $key = md5(mb_strtolower(trim(($m['home'] ?? '') . '|' . ($m['away'] ?? '')), 'UTF-8'));
             if (!isset($positions[$key])) {
                 $positions[$key] = count($out);
@@ -370,8 +521,16 @@ class F360LS_Repository {
                 continue;
             }
             $current = $out[$positions[$key]];
-            if (($current['score'] ?? '—') === '—' && ($m['score'] ?? '—') !== '—') {
+            $current_live = (($current['status_type'] ?? '') === 'live');
+            $incoming_live = (($m['status_type'] ?? '') === 'live');
+            if ($incoming_live && !$current_live) {
                 $out[$positions[$key]] = $m;
+            } elseif (($current['score'] ?? '—') === '—' && ($m['score'] ?? '—') !== '—') {
+                $out[$positions[$key]] = $m;
+            } elseif ($this->is_football360_logo($m['home_logo'] ?? '') || $this->is_football360_logo($m['away_logo'] ?? '')) {
+                if (empty($current['home_logo']) || $this->is_football360_logo($m['home_logo'] ?? '')) $current['home_logo'] = $m['home_logo'] ?? $current['home_logo'];
+                if (empty($current['away_logo']) || $this->is_football360_logo($m['away_logo'] ?? '')) $current['away_logo'] = $m['away_logo'] ?? $current['away_logo'];
+                $out[$positions[$key]] = $current;
             }
         }
         return $out;
@@ -381,9 +540,16 @@ class F360LS_Repository {
         $out = [];
         $seen = [];
         foreach ($rows as $r) {
-            $key = md5(($r['rank'] ?? '') . '|' . ($r['team'] ?? ''));
-            if (isset($seen[$key])) continue;
-            $seen[$key] = true;
+            if (empty($r['team'])) continue;
+            $key = md5(mb_strtolower(trim((string) ($r['team'] ?? '')), 'UTF-8'));
+            if (isset($seen[$key])) {
+                $idx = $seen[$key];
+                if (empty($out[$idx]['logo']) || $this->is_football360_logo($r['logo'] ?? '')) {
+                    if (!empty($r['logo'])) $out[$idx]['logo'] = $r['logo'];
+                }
+                continue;
+            }
+            $seen[$key] = count($out);
             $out[] = $r;
         }
         return $out;
@@ -404,6 +570,53 @@ class F360LS_Repository {
         return $out;
     }
 
+    private function is_football360_logo(string $url): bool {
+        $url = strtolower(trim($url));
+        return $url !== '' && (strpos($url, 'football360.ir') !== false || strpos($url, 'static.football360') !== false);
+    }
+
+    private function prefer_football360_logos(array $payload): array {
+        $map = [];
+        foreach (($payload['standings'] ?? []) as $row) {
+            if (!empty($row['team']) && $this->is_football360_logo((string) ($row['logo'] ?? ''))) {
+                $map[$this->logo_key($row['team'])] = $row['logo'];
+            }
+        }
+        foreach (($payload['matches'] ?? []) as $match) {
+            if (!empty($match['home']) && $this->is_football360_logo((string) ($match['home_logo'] ?? ''))) $map[$this->logo_key($match['home'])] = $match['home_logo'];
+            if (!empty($match['away']) && $this->is_football360_logo((string) ($match['away_logo'] ?? ''))) $map[$this->logo_key($match['away'])] = $match['away_logo'];
+        }
+        foreach (($payload['standings'] ?? []) as $i => $row) {
+            $key = $this->logo_key((string) ($row['team'] ?? ''));
+            if ($key && !empty($map[$key])) $payload['standings'][$i]['logo'] = $map[$key];
+        }
+        foreach (($payload['matches'] ?? []) as $i => $match) {
+            $home_key = $this->logo_key((string) ($match['home'] ?? ''));
+            $away_key = $this->logo_key((string) ($match['away'] ?? ''));
+            if ($home_key && !empty($map[$home_key])) $payload['matches'][$i]['home_logo'] = $map[$home_key];
+            if ($away_key && !empty($map[$away_key])) $payload['matches'][$i]['away_logo'] = $map[$away_key];
+        }
+        foreach (($payload['weeks'] ?? []) as $wi => $week) {
+            foreach (($week['matches'] ?? []) as $mi => $match) {
+                $home_key = $this->logo_key((string) ($match['home'] ?? ''));
+                $away_key = $this->logo_key((string) ($match['away'] ?? ''));
+                if ($home_key && !empty($map[$home_key])) $payload['weeks'][$wi]['matches'][$mi]['home_logo'] = $map[$home_key];
+                if ($away_key && !empty($map[$away_key])) $payload['weeks'][$wi]['matches'][$mi]['away_logo'] = $map[$away_key];
+            }
+        }
+        foreach (($payload['transfers'] ?? []) as $i => $row) {
+            $from_key = $this->logo_key((string) ($row['from'] ?? ''));
+            $to_key = $this->logo_key((string) ($row['to'] ?? ''));
+            if ($from_key && !empty($map[$from_key])) $payload['transfers'][$i]['from_logo'] = $map[$from_key];
+            if ($to_key && !empty($map[$to_key])) $payload['transfers'][$i]['to_logo'] = $map[$to_key];
+        }
+        return $payload;
+    }
+
+    private function logo_key(string $name): string {
+        return mb_strtolower(preg_replace('/\s+/u', '', trim($name)), 'UTF-8');
+    }
+
     private function apply_logo_overrides(array $payload): array {
         $overrides = get_option(F360LS_OPTION_LOGO_OVERRIDES, []);
         if (!is_array($overrides)) return $payload;
@@ -412,6 +625,10 @@ class F360LS_Repository {
         foreach (['standings'] as $key) foreach (($payload[$key] ?? []) as $i => $row) if (!empty($overrides['teams'][$row['team'] ?? ''])) $payload[$key][$i]['logo'] = $overrides['teams'][$row['team']];
         foreach (['matches'] as $key) foreach (($payload[$key] ?? []) as $i => $match) { if (!empty($overrides['teams'][$match['home'] ?? ''])) $payload[$key][$i]['home_logo']=$overrides['teams'][$match['home']]; if (!empty($overrides['teams'][$match['away'] ?? ''])) $payload[$key][$i]['away_logo']=$overrides['teams'][$match['away']]; }
         foreach (($payload['weeks'] ?? []) as $wi => $week) foreach (($week['matches'] ?? []) as $mi => $match) { if (!empty($overrides['teams'][$match['home'] ?? ''])) $payload['weeks'][$wi]['matches'][$mi]['home_logo']=$overrides['teams'][$match['home']]; if (!empty($overrides['teams'][$match['away'] ?? ''])) $payload['weeks'][$wi]['matches'][$mi]['away_logo']=$overrides['teams'][$match['away']]; }
+        foreach (($payload['transfers'] ?? []) as $i => $row) {
+            if (!empty($overrides['teams'][$row['from'] ?? ''])) $payload['transfers'][$i]['from_logo'] = $overrides['teams'][$row['from']];
+            if (!empty($overrides['teams'][$row['to'] ?? ''])) $payload['transfers'][$i]['to_logo'] = $overrides['teams'][$row['to']];
+        }
         return $payload;
     }
 
@@ -426,6 +643,8 @@ class F360LS_Repository {
             'teams' => count($standings),
             'has_matches' => !empty($matches),
             'has_table' => !empty($standings),
+            'has_transfers' => !empty($payload['transfers']),
+            'has_statistics' => !empty($payload['statistics']) || !empty($payload['top_scorers']),
         ];
     }
 
@@ -450,16 +669,18 @@ class F360LS_Repository {
         return [
             'id' => $league['id'] ?? '',
             'configured_title' => $league['title'] ?? '',
-            'league' => ['title' => $league['title'] ?? '', 'logo' => ''],
+            'league' => ['title' => $league['title'] ?? '', 'logo' => $league['logo'] ?? ''],
             'subtitle' => $league['subtitle'] ?? '',
             'weeks' => [],
             'matches' => [],
             'standings' => [],
             'top_scorers' => [],
+            'statistics' => [],
+            'transfers' => [],
             'news' => [],
             'last_update' => '',
             'description' => '',
-            'stats' => ['total'=>0,'finished'=>0,'live'=>0,'scheduled'=>0,'teams'=>0,'has_matches'=>false,'has_table'=>false],
+            'stats' => ['total'=>0,'finished'=>0,'live'=>0,'scheduled'=>0,'teams'=>0,'has_matches'=>false,'has_table'=>false,'has_transfers'=>false,'has_statistics'=>false],
             'message' => $message,
             'sources' => [],
         ];
@@ -474,7 +695,6 @@ class F360LS_Repository {
             if (!empty($league['id'])) $this->clear_cache($league['id']);
         }
     }
-
 
     public function cleanup_legacy_builtin_json_leagues(): void {
         $legacy_ids = ['bundesliga','laliga','ligue-1','nokhbegan','premier-league','serie-a','champions-league'];

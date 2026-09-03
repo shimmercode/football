@@ -2,7 +2,7 @@
 Contributors: shimmercode
 Requires at least: 5.6
 Requires PHP: 7.4
-Stable tag: 3.11.0
+Stable tag: 3.12.0
 License: GPLv2 or later
 
 نمایش حرفه‌ای جدول لیگ‌ها، نتایج زنده، بازی‌های امروز، بازی‌های تیم‌ها، فرم تیم‌ها، اخبار و شورت‌کدهای اختصاصی از منابع آنلاین و فایل‌های HTML/JSON.
@@ -44,6 +44,13 @@ data/leagues/
 
 JSON files can be placed in:
 data/matches/
+
+v3.12.0:
+- منبع اصلی اسکرپ: football360.ir با بازگشت خودکار به footballi.net اگر فوتبال۳۶۰ قطع باشد
+- تب‌های جدا برای جدول، بازی‌های زنده، آمار و ارقام، برنامه بازی‌ها و نقل و انتقالات
+- لوگوی تیم‌ها و لیگ‌ها از static.football360.ir
+- ظاهر تازه‌تر جدول رده‌بندی بدون تغییر پالت رنگ افزونه
+- بدج زنده با دقیقه و نتیجه لحظه‌ای
 
 Architecture:
 - includes/core: repository, cache logic, logger

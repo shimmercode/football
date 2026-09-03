@@ -217,7 +217,8 @@
     var tabs = wrap.querySelectorAll('.f360ls-tab');
     var search = wrap.querySelector('.f360ls-search-input');
     var filterButtons = wrap.querySelectorAll('.f360ls-filter-buttons button');
-    var currentFilter = 'all';
+    var activeFilterBtn = wrap.querySelector('.f360ls-filter-buttons button.is-active');
+    var currentFilter = (activeFilterBtn && activeFilterBtn.getAttribute('data-filter')) || 'standings';
     var isAllLayout = wrap.classList.contains('f360ls-all');
 
     // کش کردن المان‌های DOM برای افزایش سرعت
@@ -264,6 +265,14 @@
       return [];
     }
 
+    function updateLiveTabState(){
+      var liveBtn = wrap.querySelector('[data-filter="live"]');
+      if(!liveBtn) return;
+      var panel = activePanel();
+      var hasLive = !!(panel && panel.querySelector('.is-live, .status-live, .f360ls-live-badge'));
+      liveBtn.classList.toggle('has-live', hasLive);
+    }
+
     function applyFilter(){
       var q = norm(search ? search.value : '');
       var targets = targetPanels();
@@ -283,6 +292,7 @@
 
         var board = data.panel.querySelector('.f360ls-footballi-board');
         if(board) board.setAttribute('data-f360ls-filter', currentFilter);
+        updateLiveTabState();
 
         // مخفی/نمایش آیتم‌های جست‌وجو
         data.searchItems.forEach(function(item){
@@ -350,6 +360,7 @@
             initLazyWidgets(panel);
             initFavorites(wrap);
             applyFilter();
+            initAutoRefresh(wrap);
           });
         }
       });
@@ -392,13 +403,16 @@
    */
   function initAutoRefresh(wrap){
     if(!wrap) return;
+    if(wrap.dataset.f360lsRefreshBound === '1') return;
 
     var cfg = getConfig();
 
     if(!cfg.ajaxUrl) return;
-    if(wrap.getAttribute('data-f360ls-refresh') !== '1') return;
+    var hasLive = !!wrap.querySelector('.is-live, .status-live, .f360ls-live-badge');
+    if(wrap.getAttribute('data-f360ls-refresh') !== '1' && !hasLive) return;
+    wrap.dataset.f360lsRefreshBound = '1';
 
-    var interval = parseInt(cfg.refreshInterval || 60, 10);
+    var interval = hasLive ? 45 : parseInt(cfg.refreshInterval || 60, 10);
 
     if(interval < 15) interval = 15;
 
@@ -445,6 +459,13 @@
           // Re-init lazy widgets in refreshed content.
           initLazyWidgets(target);
           initFavorites(wrap);
+          var filterBtn = wrap.querySelector('.f360ls-filter-buttons button.is-active');
+          var type = filterBtn ? (filterBtn.getAttribute('data-filter') || 'standings') : 'standings';
+          target.querySelectorAll('[data-content-type]').forEach(function(section){
+            section.classList.toggle('f360ls-is-hidden', type !== 'all' && section.getAttribute('data-content-type') !== type);
+          });
+          var board = target.querySelector('.f360ls-footballi-board');
+          if(board) board.setAttribute('data-f360ls-filter', type);
 
           failures = 0;
         } else {

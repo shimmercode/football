@@ -38,12 +38,23 @@ class F360LS_Parser {
         $last_update = $this->text($xpath, "//*[contains(@class,'style_lastUpdate__')][1]", $dom->documentElement);
         $description = $this->text($xpath, "//*[contains(@class,'style_descBody__')][1]", $dom->documentElement);
 
-        return $this->make_payload($league, $weeks, $flat, $standings, $last_update, $description);
+        $payload = $this->make_payload($league, $weeks, $flat, $standings, $last_update, $description);
+        $payload = $this->enrich_from_json($payload);
+        if (empty($payload['transfers'])) $payload['transfers'] = $this->parse_transfers($xpath);
+        if (empty($payload['statistics'])) $payload['statistics'] = $this->parse_statistics($xpath);
+        if (empty($payload['top_scorers']) && !empty($payload['statistics'])) {
+            $payload['top_scorers'] = $this->statistics_as_scorers($payload['statistics']);
+        }
+        return $payload;
     }
 
     private function parse_league_meta(DOMXPath $xpath): array {
         $title = $this->text($xpath, "//h1[contains(@class,'style_title__')][1] | //h1[1]", null);
-        $logo = $this->attr($xpath, "//*[contains(@class,'style_header__') or contains(@class,'style_headerContainer__')]//img[1]", 'src', null);
+        $logo = $this->attr($xpath, "//img[contains(@src,'/competitions/') or contains(@srcset,'/competitions/')][1]", 'src', null);
+        if (!$logo) $logo = $this->first_src_from_srcset($this->attr($xpath, "//img[contains(@src,'/competitions/') or contains(@srcset,'/competitions/')][1]", 'srcset', null));
+        if (!$logo) {
+            $logo = $this->attr($xpath, "//*[contains(@class,'style_header__') or contains(@class,'style_headerContainer__')]//img[1]", 'src', null);
+        }
         if (!$logo) {
             $logo = $this->attr($xpath, "//*[contains(@class,'style_header__') or contains(@class,'style_headerContainer__')]//img[1]", 'srcset', null);
             $logo = $this->first_src_from_srcset($logo);
@@ -56,7 +67,7 @@ class F360LS_Parser {
     }
 
     private function parse_standings(DOMXPath $xpath): array {
-        $rows = $xpath->query("//div[contains(@class,'style_containerStandingTable__')]//tbody/tr | //table//tbody/tr[.//*[contains(@class,'style_name__')]]");
+        $rows = $xpath->query("//div[contains(@class,'style_containerStandingTable__')]//tbody/tr | //table//tbody/tr[.//*[contains(@class,'style_name__')] or .//a[contains(@href,'/team/')]]");
         $standings = [];
 
         if (!$rows || !$rows->length) {
@@ -190,12 +201,16 @@ class F360LS_Parser {
             $away = $this->clean_team($away);
             if (!$home || !$away) continue;
 
+            $status = trim($status) ?: ($score ? 'پایان' : 'زمان نامشخص');
+            $score = trim($score) ?: '—';
             $matches[] = [
                 'home' => $home,
                 'away' => $away,
-                'score' => trim($score) ?: '—',
-                'status' => trim($status) ?: ($score ? 'پایان' : 'زمان نامشخص'),
+                'score' => $score,
+                'status' => $status,
                 'status_type' => $this->status_type($status, $score),
+                'minute' => $this->extract_minute($status),
+                'date' => $this->extract_date($status),
                 'home_logo' => $this->normalize_src($homeLogo),
                 'away_logo' => $this->normalize_src($awayLogo),
                 'href' => $this->normalize_href($href),
@@ -211,6 +226,9 @@ class F360LS_Parser {
             'weeks' => $weeks,
             'matches' => $matches,
             'standings' => $standings,
+            'top_scorers' => [],
+            'statistics' => [],
+            'transfers' => [],
             'last_update' => $this->clean($last_update),
             'description' => $this->clean($description),
             'stats' => [
@@ -371,9 +389,323 @@ class F360LS_Parser {
     private function status_type($status, $score): string {
         $s = trim((string) $status);
         $score = trim((string) $score);
-        if (preg_match('/زنده|نیمه|در جریان|\d+\s*\'|\d+ دقیقه/u', $s)) return 'live';
-        if (preg_match('/پایان|تمام|FT|بعد از پنالتی/u', $s) || preg_match('/\d+\s*-\s*\d+/u', $score)) return 'finished';
+        if (preg_match('/زنده|live|نیمه|در جریان|در حال|\d+\s*[\'′]|\d+\s*دقیقه|وقت اضافه/iu', $s)) return 'live';
+        if (preg_match('/پایان|تمام|FT|بعد از پنالتی/u', $s)) return 'finished';
+        if (preg_match('/\d+\s*-\s*\d+/u', $score) && !preg_match('/\d{1,2}:\d{2}/', $s)) return 'finished';
         return 'scheduled';
+    }
+
+    private function extract_minute(string $status): string {
+        if (preg_match('/(\d{1,3})\s*[\'′]|(\d{1,3})\s*دقیقه/u', $status, $m)) {
+            return ($m[1] ?? '') !== '' ? $m[1] : (string) ($m[2] ?? '');
+        }
+        return '';
+    }
+
+    private function extract_date(string $status): string {
+        return preg_match('/\d{4}-\d{2}-\d{2}/', $status, $m) ? $m[0] : '';
+    }
+
+    private function parse_transfers(DOMXPath $xpath): array {
+        $out = [];
+        $nodes = $xpath->query("//a[contains(@href,'/player/')]");
+        if (!$nodes) return [];
+        foreach ($nodes as $a) {
+            if (!$a instanceof DOMElement) continue;
+            $box = $a;
+            for ($i = 0; $i < 6 && $box; $i++, $box = $box->parentNode) {
+                if (!$box instanceof DOMElement) continue;
+                $text = $this->clean($box->textContent);
+                if (!preg_match('/انتقال|قرضی/u', $text)) continue;
+                $player = $this->clean_team($this->clean($a->textContent) ?: $a->getAttribute('title'));
+                $img = $xpath->query('.//img', $a)->item(0);
+                $photo = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
+                if (!$player && $img instanceof DOMElement) $player = $this->clean_team($img->getAttribute('alt'));
+                $teams = [];
+                $logos = [];
+                foreach ($xpath->query('.//a[contains(@href,"/team/")]', $box) ?: [] as $teamNode) {
+                    if (!$teamNode instanceof DOMElement) continue;
+                    $name = $this->clean_team($teamNode->textContent);
+                    $tImg = $xpath->query('.//img', $teamNode)->item(0);
+                    if (!$name && $tImg instanceof DOMElement) $name = $this->clean_team($tImg->getAttribute('alt'));
+                    if ($name) {
+                        $teams[] = $name;
+                        $logos[] = ($tImg instanceof DOMElement) ? $this->normalize_src($this->image_src($tImg)) : '';
+                    }
+                }
+                if (!$player || count($teams) < 1) continue;
+                $type = 'انتقال';
+                if (preg_match('/انتقال آزاد|آزاد/u', $text)) $type = 'انتقال آزاد';
+                elseif (preg_match('/قرضی/u', $text)) $type = 'قرضی';
+                elseif (preg_match('/قطعی/u', $text)) $type = 'انتقال قطعی';
+                $when = '';
+                if (preg_match('/(\d+\s*(?:سال|ماه|هفته|روز|ساعت|دقیقه)\s*پیش)/u', $text, $tm)) $when = $tm[1];
+                $out[] = [
+                    'player' => $player,
+                    'photo' => $photo,
+                    'from' => $teams[0] ?? '',
+                    'from_logo' => $logos[0] ?? '',
+                    'to' => $teams[1] ?? '',
+                    'to_logo' => $logos[1] ?? '',
+                    'type' => $type,
+                    'date' => $when,
+                    'href' => $this->normalize_href($a->getAttribute('href')),
+                ];
+                break;
+            }
+            if (count($out) >= 80) break;
+        }
+        $seen = [];
+        $clean = [];
+        foreach ($out as $row) {
+            $key = md5(($row['player'] ?? '') . '|' . ($row['from'] ?? '') . '|' . ($row['to'] ?? ''));
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+            $clean[] = $row;
+        }
+        return $clean;
+    }
+
+    private function parse_statistics(DOMXPath $xpath): array {
+        $groups = [];
+        $titles = [
+            'گل' => 'گل',
+            'پاس گل' => 'پاس گل',
+            'گل + پاس گل' => 'گل + پاس گل',
+            'گل+پاس گل' => 'گل + پاس گل',
+            'کلین‌شیت' => 'کلین‌شیت',
+            'کلین شیت' => 'کلین‌شیت',
+            'نمره متریکا' => 'نمره متریکا',
+            'امید گل' => 'امید گل',
+        ];
+        foreach ($xpath->query("//*[self::h2 or self::h3 or self::h4 or self::strong or contains(@class,'title') or contains(@class,'header')]") ?: [] as $head) {
+            $title = $this->clean($head->textContent);
+            $matched = '';
+            foreach ($titles as $needle => $label) {
+                if ($title === $needle || mb_stripos($title, $needle, 0, 'UTF-8') !== false) {
+                    $matched = $label;
+                    break;
+                }
+            }
+            if (!$matched) continue;
+            $container = $head->parentNode;
+            if (!$container instanceof DOMElement) continue;
+            $rows = $this->statistic_rows_from_node($xpath, $container);
+            if (!$rows && $container->parentNode instanceof DOMElement) $rows = $this->statistic_rows_from_node($xpath, $container->parentNode);
+            if (!$rows) continue;
+            $key = sanitize_key($matched);
+            $groups[$key] = ['key' => $key, 'title' => $matched, 'rows' => $rows];
+        }
+        if (!$groups) {
+            $rows = $this->statistic_rows_from_node($xpath, null);
+            if ($rows) $groups['goals'] = ['key' => 'goals', 'title' => 'گل', 'rows' => $rows];
+        }
+        return array_values($groups);
+    }
+
+    private function statistic_rows_from_node(DOMXPath $xpath, $context): array {
+        $rows = [];
+        $query = ".//a[contains(@href,'/player/')]";
+        $nodes = $context ? $xpath->query($query, $context) : $xpath->query("//a[contains(@href,'/player/')]");
+        if (!$nodes) return [];
+        $rank = 0;
+        foreach ($nodes as $a) {
+            if (!$a instanceof DOMElement) continue;
+            $name = $this->clean_team($a->textContent);
+            $img = $xpath->query('.//img', $a)->item(0);
+            $photo = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
+            if (!$name && $img instanceof DOMElement) $name = $this->clean_team($img->getAttribute('alt'));
+            $text = $this->clean($a->textContent);
+            $value = '';
+            if (preg_match('/(\d+(?:\.\d+)?|[۰-۹]+(?:[٫.]\d+)?)\s*$/u', $text, $m)) $value = $this->fa_to_en($m[1]);
+            if (!$name || $value === '') continue;
+            $name = preg_replace('/\s+\d+(?:\.\d+)?$/u', '', $name);
+            $team = '';
+            $parent = $a->parentNode;
+            if ($parent) {
+                $teamNode = $xpath->query('.//a[contains(@href,"/team/")]', $parent)->item(0);
+                if ($teamNode) $team = $this->clean_team($teamNode->textContent);
+            }
+            $rank++;
+            $rows[] = [
+                'rank' => (string) $rank,
+                'name' => $this->clean_team($name),
+                'team' => $team,
+                'value' => $value,
+                'goals' => $value,
+                'photo' => $photo,
+                'href' => $this->normalize_href($a->getAttribute('href')),
+            ];
+            if (count($rows) >= 30) break;
+        }
+        return $rows;
+    }
+
+    private function statistics_as_scorers(array $statistics): array {
+        foreach ($statistics as $group) {
+            if (($group['title'] ?? '') === 'گل' || ($group['key'] ?? '') === 'goals') return $group['rows'] ?? [];
+        }
+        return $statistics[0]['rows'] ?? [];
+    }
+
+    private function enrich_from_json(array $payload): array {
+        if (!preg_match('~<script[^>]*id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>~isu', $this->html, $m)) return $payload;
+        $decoded = json_decode(html_entity_decode(trim($m[1]), ENT_QUOTES, 'UTF-8'), true);
+        if (!is_array($decoded)) return $payload;
+        $found = ['standings' => [], 'matches' => [], 'transfers' => [], 'statistics' => [], 'logo' => '', 'title' => ''];
+        $this->walk_json($decoded, $found);
+        if (empty($payload['league']['title']) && $found['title']) $payload['league']['title'] = $found['title'];
+        if ((empty($payload['league']['logo']) || !$this->is_f360_asset($payload['league']['logo'])) && $found['logo']) $payload['league']['logo'] = $this->normalize_src($found['logo']);
+        if (empty($payload['standings']) && $found['standings']) $payload['standings'] = $found['standings'];
+        if (empty($payload['matches']) && $found['matches']) {
+            $payload['matches'] = $found['matches'];
+            $payload['weeks'] = [['title' => 'بازی‌ها', 'matches' => $found['matches']]];
+        }
+        if (empty($payload['transfers']) && $found['transfers']) $payload['transfers'] = $found['transfers'];
+        if (empty($payload['statistics']) && $found['statistics']) $payload['statistics'] = $found['statistics'];
+        return $payload;
+    }
+
+    private function walk_json($node, array &$found, int $depth = 0): void {
+        if (!is_array($node) || $depth > 18) return;
+        $standing = $this->normalize_standing_row($node);
+        if ($standing) $found['standings'][] = $standing;
+        $match = $this->normalize_json_match($node);
+        if ($match) $found['matches'][] = $match;
+        $transfer = $this->normalize_json_transfer($node);
+        if ($transfer) $found['transfers'][] = $transfer;
+
+        if (empty($found['logo'])) {
+            foreach (['logo', 'image', 'emblem', 'competitionLogo'] as $key) {
+                if (!empty($node[$key]) && is_string($node[$key]) && $this->is_f360_asset($node[$key])) {
+                    $found['logo'] = $node[$key];
+                    break;
+                }
+            }
+        }
+        if (empty($found['title'])) {
+            foreach (['faName', 'persianName', 'title', 'name'] as $key) {
+                if (!empty($node[$key]) && is_string($node[$key]) && preg_match('/لیگ|جام|لالیگا|بوندس|سری/u', $node[$key])) {
+                    $found['title'] = $this->clean($node[$key]);
+                    break;
+                }
+            }
+        }
+
+        foreach ($node as $child) {
+            if (is_array($child)) $this->walk_json($child, $found, $depth + 1);
+        }
+    }
+
+    private function normalize_standing_row($row): ?array {
+        if (!is_array($row)) return null;
+        $team = $this->json_value($row, ['team.name','team.title','team.faName','club.name','participant.name','name','title']);
+        $points = $this->json_value($row, ['points','point','pts','stats.points']);
+        $played = $this->json_value($row, ['played','matches','games','overall.played','stats.played']);
+        if (!$team || ($points === '' && $played === '')) return null;
+        if (preg_match('/لیگ|جدول|امتیاز/u', $team)) return null;
+        $logo = $this->json_value($row, ['team.logo','team.image','club.logo','logo','image']);
+        return [
+            'rank' => $this->json_value($row, ['rank','position','pos','place']),
+            'team' => $this->clean_team($team),
+            'logo' => $this->normalize_src($logo),
+            'played' => $played,
+            'won' => $this->json_value($row, ['won','wins','overall.won']),
+            'draw' => $this->json_value($row, ['draw','draws','overall.draw']),
+            'lost' => $this->json_value($row, ['lost','losses','overall.lost']),
+            'diff' => $this->json_value($row, ['diff','goalDifference','gd']),
+            'goals' => $this->json_value($row, ['goals','goalsForAgainst','gfga']),
+            'points' => $points,
+            'movement' => 'equal',
+        ];
+    }
+
+    private function normalize_json_match($item): ?array {
+        if (!is_array($item)) return null;
+        $home = $this->json_team_name($item['home'] ?? $item['homeTeam'] ?? $item['host'] ?? null) ?: $this->json_value($item, ['home.name','homeTeam.name','homeTitle']);
+        $away = $this->json_team_name($item['away'] ?? $item['awayTeam'] ?? $item['guest'] ?? null) ?: $this->json_value($item, ['away.name','awayTeam.name','awayTitle']);
+        if (!$home || !$away) return null;
+        $homeScore = $this->json_value($item, ['homeScore','home_score','home.score','score.home']);
+        $awayScore = $this->json_value($item, ['awayScore','away_score','away.score','score.away']);
+        $score = $this->json_value($item, ['score','result']);
+        if ($score === '' && $homeScore !== '' && $awayScore !== '') $score = $homeScore . ' - ' . $awayScore;
+        if ($score === '') $score = '—';
+        $status = $this->json_value($item, ['status','statusTitle','minute','date','startDate']);
+        if ($status === '') $status = ($score !== '—') ? 'پایان' : 'زمان نامشخص';
+        return [
+            'home' => $this->clean_team($home),
+            'away' => $this->clean_team($away),
+            'score' => $score,
+            'status' => $status,
+            'status_type' => $this->status_type($status, $score),
+            'minute' => $this->extract_minute($status),
+            'date' => $this->extract_date((string) $this->json_value($item, ['startDate','date','kickoff'])),
+            'home_logo' => $this->normalize_src($this->json_team_logo($item['home'] ?? $item['homeTeam'] ?? null)),
+            'away_logo' => $this->normalize_src($this->json_team_logo($item['away'] ?? $item['awayTeam'] ?? null)),
+            'href' => $this->normalize_href($this->json_value($item, ['href','url','link'])),
+        ];
+    }
+
+    private function normalize_json_transfer($item): ?array {
+        if (!is_array($item)) return null;
+        $player = $this->json_value($item, ['player.name','player.faName','person.name','name']);
+        $from = $this->json_team_name($item['from'] ?? $item['fromTeam'] ?? $item['origin'] ?? null) ?: $this->json_value($item, ['from.name','fromTeam.name']);
+        $to = $this->json_team_name($item['to'] ?? $item['toTeam'] ?? $item['destination'] ?? null) ?: $this->json_value($item, ['to.name','toTeam.name']);
+        $type = $this->json_value($item, ['type','transferType','feeType','moveType']);
+        if (!$player || (!$from && !$to)) return null;
+        if ($type === '' && empty($item['from']) && empty($item['to']) && empty($item['fromTeam'])) return null;
+        return [
+            'player' => $this->clean_team($player),
+            'photo' => $this->normalize_src($this->json_value($item, ['player.image','player.photo','photo','image'])),
+            'from' => $this->clean_team($from),
+            'from_logo' => $this->normalize_src($this->json_team_logo($item['from'] ?? $item['fromTeam'] ?? null)),
+            'to' => $this->clean_team($to),
+            'to_logo' => $this->normalize_src($this->json_team_logo($item['to'] ?? $item['toTeam'] ?? null)),
+            'type' => $type ?: 'انتقال',
+            'date' => $this->json_value($item, ['date','announcedAt','time']),
+            'href' => $this->normalize_href($this->json_value($item, ['href','url'])),
+        ];
+    }
+
+    private function json_team_name($team): string {
+        if (is_string($team) || is_numeric($team)) return (string) $team;
+        if (!is_array($team)) return '';
+        return $this->json_value($team, ['name','title','faName','persianName','shortName']);
+    }
+
+    private function json_team_logo($team): string {
+        if (!is_array($team)) return '';
+        return $this->json_value($team, ['logo','image','icon','badge']);
+    }
+
+    private function json_value(array $arr, array $paths): string {
+        foreach ($paths as $path) {
+            $current = $arr;
+            foreach (explode('.', $path) as $part) {
+                if (!is_array($current) || !array_key_exists($part, $current)) { $current = null; break; }
+                $current = $current[$part];
+            }
+            if ($current !== null && $current !== '' && !is_array($current)) return (string) $current;
+        }
+        return '';
+    }
+
+    private function image_src(DOMElement $img): string {
+        foreach (['src','data-src','data-lazy-src','srcset','data-srcset'] as $attr) {
+            $value = trim($img->getAttribute($attr));
+            if (!$value) continue;
+            if ($attr === 'srcset' || $attr === 'data-srcset') $value = $this->first_src_from_srcset($value);
+            if ($value && strpos($value, 'data:image') !== 0 && strpos($value, 'missing_') === false) return $value;
+        }
+        return '';
+    }
+
+    private function is_f360_asset(string $url): bool {
+        return strpos($url, 'football360.ir') !== false || strpos($url, 'static.football360') !== false;
+    }
+
+    private function fa_to_en(string $text): string {
+        return strtr($text, ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']);
     }
 
     private function first_src_from_srcset($srcset): string {
@@ -387,10 +719,12 @@ class F360LS_Parser {
 
     private function normalize_src($src): string {
         $src = trim((string) $src);
-        if (!$src) return '';
+        if (!$src || strpos($src, 'data:image') === 0) return '';
+        if (preg_match('~missing_team_logo|missing_person_image|placeholder|ic_default~i', $src)) return '';
         if (strpos($src, './') === 0) return '';
         if (strpos($src, '//') === 0) return 'https:' . $src;
         if (strpos($src, '/_next/image') === 0) return 'https://football360.ir' . $src;
+        if (strpos($src, '/') === 0) return 'https://football360.ir' . $src;
         return $src;
     }
 
