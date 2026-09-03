@@ -174,7 +174,9 @@ class F360LS_Repository {
                 }
             }
         }
-        $payload = $this->merge_live_results($payload);
+        if (empty($payload['statistics']) && empty($payload['top_scorers'])) {
+            $payload = $this->fill_generic_statistics($payload, $league);
+        }
 
         if (!$parsed_any) {
             $payload['message'] = 'منبع لیگ قابل خواندن نبود. اگر از لینک مستقیم استفاده می‌کنید، مطمئن شوید سرور شما به سایت مرجع دسترسی دارد.';
@@ -296,11 +298,9 @@ class F360LS_Repository {
         if ($f360_base) {
             $primary['source_url'] = $f360_base;
             $primary['table_url'] = ($table && $this->is_football360_host($table) && !$this->is_generic_mixed_feed($table)) ? $table : $f360_base;
-            $primary['games_url'] = ($games && $this->is_football360_host($games) && !$this->is_generic_mixed_feed($games)) ? $games : ($f360_base . '/games');
-            $primary['games_url_alt'] = $f360_base . '/matches';
-            $primary['statistics_url'] = ($statistics && $this->is_football360_host($statistics)) ? $statistics : ($f360_base . '/statistics');
-            $primary['statistics_players'] = $f360_base . '/statistics/players';
             $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
+            $primary['games_url'] = ($games && $this->is_football360_host($games) && !$this->is_generic_mixed_feed($games)) ? $games : ($f360_base . '/games');
+            $primary['statistics_url'] = ($statistics && $this->is_football360_host($statistics)) ? $statistics : ($f360_base . '/statistics');
         } else {
             foreach (['source_url' => $source, 'games_url' => $games, 'table_url' => $table, 'statistics_url' => $statistics, 'transfers_url' => $transfers] as $kind => $url) {
                 if ($url && $this->is_football360_host($url) && !$this->is_generic_mixed_feed($url)) $primary[$kind] = $url;
@@ -402,7 +402,7 @@ class F360LS_Repository {
             return '';
         }
         $args = [
-            'timeout' => 20,
+            'timeout' => 12,
             'redirection' => 5,
             'sslverify' => true,
             'headers' => [

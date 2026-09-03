@@ -536,15 +536,13 @@ public function league_tabs($atts): string {
         $total = count($standings);
         ob_start(); ?>
         <div class="f360ls-table-scroll f360ls-table-creative"><table class="f360ls-standings-table"><thead><tr><th>رتبه</th><th>تیم</th><th>بازی</th><th>برد</th><th>مساوی</th><th>باخت</th><th>تفاضل</th><th>گل +/-</th><th>امتیاز</th></tr></thead><tbody>
-            <?php $display_rank = 0; $used_ranks = []; foreach ($standings as $row):
+            <?php $display_rank = 0; foreach ($standings as $row):
                 $group = $row['group'] ?? '';
-                if ($group && $group !== $last_group): $last_group = $group; $display_rank = 0; $used_ranks = []; ?>
+                if ($group && $group !== $last_group): $last_group = $group; $display_rank = 0; ?>
                     <tr class="f360ls-group-row"><td colspan="9"><?php echo esc_html($group); ?></td></tr>
                 <?php endif;
-                $source_rank = intval($row['rank'] ?? 0);
                 $display_rank++;
-                $rank = ($source_rank > 0 && !isset($used_ranks[$source_rank])) ? $source_rank : $display_rank;
-                $used_ranks[$rank] = true;
+                $rank = $display_rank;
                 $medal = $rank === 1 ? 'is-gold' : ($rank === 2 ? 'is-silver' : ($rank === 3 ? 'is-bronze' : ''));
                 $zone = '';
                 if ($rank > 0 && $rank <= 4) $zone = 'is-zone-europe';
@@ -561,37 +559,70 @@ public function league_tabs($atts): string {
 
     private function render_matches_column(array $weeks, bool $live_only = false): string {
         ob_start(); ?>
-        <div class="f360ls-vertical-matches">
-            <?php foreach ($weeks as $week): $shown_date = ''; ?>
-                <div class="f360ls-vertical-week">
-                    <?php foreach (($week['matches'] ?? []) as $m):
-                        if ($live_only && (($m['status_type'] ?? '') !== 'live')) continue;
+        <div class="f360ls-fixture-list">
+            <?php foreach ($weeks as $week):
+                $week_matches = [];
+                foreach (($week['matches'] ?? []) as $m) {
+                    if ($live_only && (($m['status_type'] ?? '') !== 'live')) continue;
+                    $week_matches[] = $m;
+                }
+                if (!$week_matches) continue;
+                $shown_date = '';
+                ?>
+                <section class="f360ls-fixture-week">
+                    <?php if (!empty($week['title'])): ?>
+                        <h4 class="f360ls-fixture-week-title"><?php echo esc_html($week['title']); ?></h4>
+                    <?php endif; ?>
+                    <?php foreach ($week_matches as $m):
                         $is_live = (($m['status_type'] ?? '') === 'live');
+                        $status_type = $m['status_type'] ?? 'scheduled';
                         $match_date = $this->match_date_label((string) ($m['date'] ?? ''));
+                        $home_score = '';
+                        $away_score = '';
+                        if (preg_match('/(\d+)\s*[-–]\s*(\d+)/u', (string) ($m['score'] ?? ''), $sm)) {
+                            $home_score = $sm[1];
+                            $away_score = $sm[2];
+                        }
+                        $kickoff = '';
+                        if ($status_type === 'scheduled' && preg_match('/\d{1,2}:\d{2}/', (string) ($m['status'] ?? ''), $tm)) {
+                            $kickoff = $tm[0];
+                        }
                         if ($match_date !== '' && $match_date !== $shown_date): $shown_date = $match_date; ?>
-                            <h4><?php echo esc_html($match_date); ?></h4>
-                        <?php elseif ($shown_date === '' && !empty($week['title'])): $shown_date = '__week__'; ?>
-                            <h4><?php echo esc_html($week['title']); ?></h4>
+                            <div class="f360ls-fixture-date"><?php echo esc_html($match_date); ?></div>
                         <?php endif; ?>
-                        <article class="f360ls-vertical-match <?php echo $is_live ? 'is-live' : ''; ?>" data-search="<?php echo esc_attr(($m['home'] ?? '') . ' ' . ($m['away'] ?? '')); ?>">
-                            <div class="f360ls-match-date">
+                        <article class="f360ls-fixture <?php echo $is_live ? 'is-live' : ''; ?> status-<?php echo esc_attr($status_type); ?>" data-search="<?php echo esc_attr(($m['home'] ?? '') . ' ' . ($m['away'] ?? '')); ?>">
+                            <div class="f360ls-fixture-status">
                                 <?php if ($is_live): ?>
                                     <span class="f360ls-live-badge">زنده</span>
-                                    <?php if (!empty($m['minute'])): ?><span class="f360ls-live-minute">دقیقه <?php echo esc_html($m['minute']); ?></span><?php endif; ?>
+                                    <?php if (!empty($m['minute'])): ?><span class="f360ls-live-minute"><?php echo esc_html($m['minute']); ?>′</span><?php endif; ?>
+                                <?php elseif ($kickoff !== ''): ?>
+                                    <span><?php echo esc_html($kickoff); ?></span>
                                 <?php else: ?>
-                                    <?php echo esc_html($m['status'] ?? ''); ?>
+                                    <span><?php echo esc_html($m['status'] ?? ''); ?></span>
                                 <?php endif; ?>
                             </div>
-                            <div class="f360ls-match-teams-row">
-                                <span><?php echo esc_html($m['home'] ?? ''); ?></span><?php if (!empty($m['home_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($m['home_logo']); ?>" alt="<?php echo esc_attr($m['home']); ?>"><?php endif; ?>
-                            </div>
-                            <strong><?php echo esc_html($m['score'] ?? '—'); ?></strong>
-                            <div class="f360ls-match-teams-row is-away">
-                                <?php if (!empty($m['away_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($m['away_logo']); ?>" alt="<?php echo esc_attr($m['away']); ?>"><?php endif; ?><span><?php echo esc_html($m['away'] ?? ''); ?></span>
+                            <div class="f360ls-fixture-grid">
+                                <div class="f360ls-fixture-team is-home">
+                                    <span><?php echo esc_html($m['home'] ?? ''); ?></span>
+                                    <?php if (!empty($m['home_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($m['home_logo']); ?>" alt="<?php echo esc_attr($m['home']); ?>"><?php endif; ?>
+                                </div>
+                                <div class="f360ls-fixture-score" aria-label="<?php echo esc_attr($m['score'] ?? ''); ?>">
+                                    <?php if ($home_score !== ''): ?>
+                                        <b><?php echo esc_html($home_score); ?></b><i>-</i><b><?php echo esc_html($away_score); ?></b>
+                                    <?php elseif ($kickoff !== ''): ?>
+                                        <em><?php echo esc_html($kickoff); ?></em>
+                                    <?php else: ?>
+                                        <em><?php echo esc_html(($m['score'] ?? '') !== '' ? $m['score'] : '—'); ?></em>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="f360ls-fixture-team is-away">
+                                    <?php if (!empty($m['away_logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($m['away_logo']); ?>" alt="<?php echo esc_attr($m['away']); ?>"><?php endif; ?>
+                                    <span><?php echo esc_html($m['away'] ?? ''); ?></span>
+                                </div>
                             </div>
                         </article>
                     <?php endforeach; ?>
-                </div>
+                </section>
             <?php endforeach; ?>
         </div><?php return ob_get_clean();
     }
@@ -679,7 +710,7 @@ public function league_tabs($atts): string {
                 $value = $row['goals'] ?? $row['value'] ?? '';
                 ?>
                 <div class="f360ls-scorer-row" data-search="<?php echo esc_attr($row['name'] ?? ''); ?>">
-                    <b><?php echo esc_html($row['rank'] ?? (string) ($i + 1)); ?></b>
+                    <b><?php echo esc_html((string) ($i + 1)); ?></b>
 
                     <?php if (!empty($row['photo'])): ?>
                         <img

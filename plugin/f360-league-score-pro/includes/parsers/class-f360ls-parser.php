@@ -28,7 +28,7 @@ class F360LS_Parser {
 
         $flat = [];
         foreach ($weeks as $week) {
-            foreach ($week['matches'] as $m) {
+            foreach (($week['matches'] ?? []) as $m) {
                 $flat[] = $m;
             }
         }
@@ -38,10 +38,11 @@ class F360LS_Parser {
 
         if (!$weeks) $weeks = $this->regex_matches_href($this->html);
         if (!$standings) $standings = $this->regex_standings_href($this->html);
+        $standings = $this->renumber_standings(is_array($standings) ? $standings : []);
 
         $flat = [];
         foreach ($weeks as $week) {
-            foreach ($week['matches'] as $m) {
+            foreach (($week['matches'] ?? []) as $m) {
                 $flat[] = $m;
             }
         }
@@ -158,7 +159,7 @@ class F360LS_Parser {
             ];
         }
 
-        return $standings;
+        return $this->renumber_standings($standings);
     }
 
     private function parse_match_weeks(DOMXPath $xpath): array {
@@ -239,7 +240,7 @@ class F360LS_Parser {
                 'movement' => 'equal',
             ];
         }
-        return $standings;
+        return $this->renumber_standings($standings);
     }
 
     private function parse_matches_from_links(DOMXPath $xpath): array {
@@ -353,6 +354,9 @@ class F360LS_Parser {
             $away = $this->clean_team($away);
             if (!$home || !$away) continue;
 
+            $status = trim($st$away = $this->clean_team($away);
+            if (!$home || !$away) continue;
+
             $status = trim($status) ?: ($score ? 'پایان' : 'زمان نامشخص');
             $score = trim($score) ?: '—';
             $matches[] = [
@@ -407,7 +411,7 @@ class F360LS_Parser {
             $last_update = $this->strip($m[1]);
         }
 
-        $standings = $this->regex_standings($html);
+        $standings = $this->renumber_standings($this->regex_standings($html));
         $weeks = $this->regex_weeks($html);
         $flat = [];
         foreach ($weeks as $week) foreach ($week['matches'] as $m) $flat[] = $m;
@@ -565,10 +569,11 @@ class F360LS_Parser {
         foreach ($nodes as $a) {
             if (!$a instanceof DOMElement) continue;
             $box = $a;
-            for ($i = 0; $i < 6 && $box; $i++, $box = $box->parentNode) {
+            for ($i = 0; $i < 8 && $box; $i++, $box = $box->parentNode) {
                 if (!$box instanceof DOMElement) continue;
                 $text = $this->clean($box->textContent);
-                if (!preg_match('/انتقال|قرضی/u', $text)) continue;
+                $team_count = $xpath->query('.//a[contains(@href,"/team/")]', $box)->length;
+                if (!preg_match('/انتقال|قرضی|آزاد|قطعی/u', $text) && $team_count < 2) continue;
                 $player = $this->clean_team($this->clean($a->textContent) ?: $a->getAttribute('title'));
                 $img = $xpath->query('.//img', $a)->item(0);
                 $photo = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
@@ -699,12 +704,7 @@ class F360LS_Parser {
 
     private function statistics_as_scorers(array $statistics): array {
         foreach ($statistics as $group) {
-            if (($group['title'] ?? '') === 'گل' || ($group['key'] ?? '') === 'goals') return $group['rows'] ?? [];
-        }
-        return $statistics[0]['rows'] ?? [];
-    }
-
-    private function enrich_from_json(array $payload): array {
+            if (($group['title'] ?? '') === 'گل' || ($group['key'] ?? '') === 'goals') return $group['rows'array $payload): array {
         if (!preg_match('~<script[^>]*id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>~isu', $this->html, $m)) return $payload;
         $decoded = json_decode(html_entity_decode(trim($m[1]), ENT_QUOTES, 'UTF-8'), true);
         if (!is_array($decoded)) return $payload;
@@ -864,6 +864,71 @@ class F360LS_Parser {
         return strtr($text, ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']);
     }
 
+    private function renumber_standings(array $standings): array {
+        if (!$standings) return [];
+        $out = [];
+        $rank = 0;
+        $last_group = null;
+        foreach ($standings as $row) {
+            if (!is_array($row) || ($row['team'] ?? '') === '') continue;
+            $group = (string) ($row['group'] ?? '');
+            if ($group !== (string) $last_group) {
+                $rank = 0;
+                $last_group = $group;
+            }
+            $rank++;
+            $row['rank'] = (string) $rank;
+            $out[] = $row;
+        }
+        return $out;
+    }
+
+    private function regex_matches_href(string $html): array {
+        $matches = [];
+        if (!preg_match_all('/<a[^>]+href=["\']([^"\']*\/matches\/[^"\']+)["\'][^>]*>(.*?)<\/a>/isu', $html, $items, PREG_SET_ORDER)) {
+            return [];
+        }
+        foreach ($items as $it) {
+            $href = $this->normalize_href($it[1] ?? '');
+            $body = $it[2] ?? '';
+            $alts = [];
+            $logos = [];
+            if (preg_match_all('/<img[^>]+>/isu', $body, $imgs)) {
+                foreach ($imgs[0] as $tag) {
+                    $alt = '';
+                    $src = '';
+                    if (preg_match('/alt=["\']([^"\']*)["\']/', $tag, $am)) $alt = $this->clean_team($am[1]);
+                    if (preg_match('/src=["\']([^"\']+)["\']/', $tag, $sm)) $src = $this->normalize_src($sm[1]);
+                    if ($alt) { $alts[] = $alt; $logos[] = $src; }
+                }
+            }
+            $text = $this->strip($body);
+            $score = '—';
+            $status = '';
+            if (preg_match('/(\d+)\s*[-–]\s*(\d+)/u', $text, $m)) $score = $this->fa_to_en($m[1]) . ' - ' . $this->fa_to_en($m[2]);
+            if (preg_match('/زنده|نیمه|پایان|تمام|\d{1,2}:\d{2}/u', $text, $sm)) $status = $sm[0];
+            if (count($alts) < 2) continue;
+            if ($status === '') $status = ($score !== '—') ? 'پایان' : 'زمان نامشخص';
+            $matches[] = [
+                'home' => $alts[0],
+                'away' => $alts[1],
+                'score' => $score,
+                'status' => $status,
+                'status_type' => $this->status_type($status, $score),
+                'minute' => $this->extract_minute($status),
+                'date' => '',
+                'home_logo' => $logos[0] ?? '',
+                'away_logo' => $logos[1] ?? '',
+                'href' => $href,
+            ];
+        }
+        return $matches ? [['title' => 'بازی‌ها', 'matches' => $matches]] : [];
+    }
+
+    private function regex_standings_href(string $html): array {
+        return [];
+    }
+
     private function first_src_from_srcset($srcset): string {
         $srcset = trim((string) $srcset);
         if (!$srcset) return '';
@@ -888,6 +953,11 @@ class F360LS_Parser {
         $href = trim((string) $href);
         if (!$href) return '';
         if (strpos($href, 'http') === 0) return $href;
+        if (strpos($href, '/') === 0) return 'https://football360.ir' . $href;
+        return '';
+    }
+}
+f;
         if (strpos($href, '/') === 0) return 'https://football360.ir' . $href;
         return '';
     }
