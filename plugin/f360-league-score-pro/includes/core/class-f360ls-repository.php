@@ -159,6 +159,23 @@ class F360LS_Repository {
             $payload = $this->merge_payloads($payload, $data, $source);
         }
 
+        if (empty($payload['standings']) || empty($payload['matches'])) {
+            $resolved = $this->resolve_remote_urls($league);
+            foreach ($resolved['fallback'] as $kind => $url) {
+                $html = $this->fetch_allowed_league_url($url);
+                if (!$html) continue;
+                try {
+                    $use_footballi = class_exists('F360LS_Footballi_Parser') && F360LS_Footballi_Parser::looks_like($html, ['url' => $url]);
+                    $data = $use_footballi ? (new F360LS_Footballi_Parser($html, ['url' => $url]))->parse($league) : (new F360LS_Parser($html))->parse();
+                    $parsed_any = true;
+                    $payload = $this->merge_payloads($payload, $data, ['type' => 'url', 'kind' => $kind, 'url' => $url, 'path' => '']);
+                } catch (Throwable $e) {
+                    continue;
+                }
+            }
+        }
+        $payload = $this->merge_live_results($payload);
+
         if (!$parsed_any) {
             $payload['message'] = 'منبع لیگ قابل خواندن نبود. اگر از لینک مستقیم استفاده می‌کنید، مطمئن شوید سرور شما به سایت مرجع دسترسی دارد.';
             if (class_exists('F360LS_Logger')) F360LS_Logger::log('error', 'هیچ منبعی قابل parse نبود.', ['league_id' => $id]);
@@ -280,7 +297,9 @@ class F360LS_Repository {
             $primary['source_url'] = $f360_base;
             $primary['table_url'] = ($table && $this->is_football360_host($table) && !$this->is_generic_mixed_feed($table)) ? $table : $f360_base;
             $primary['games_url'] = ($games && $this->is_football360_host($games) && !$this->is_generic_mixed_feed($games)) ? $games : ($f360_base . '/games');
+            $primary['games_url_alt'] = $f360_base . '/matches';
             $primary['statistics_url'] = ($statistics && $this->is_football360_host($statistics)) ? $statistics : ($f360_base . '/statistics');
+            $primary['statistics_players'] = $f360_base . '/statistics/players';
             $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
         } else {
             foreach (['source_url' => $source, 'games_url' => $games, 'table_url' => $table, 'statistics_url' => $statistics, 'transfers_url' => $transfers] as $kind => $url) {
@@ -663,6 +682,55 @@ class F360LS_Repository {
         if (!$latest && !empty($league['file']) && file_exists($league['file'])) $latest = filemtime($league['file']);
         if ($latest) return 'آخرین بروزرسانی داده: ' . date_i18n(get_option('date_format') . ' - ' . get_option('time_format'), $latest);
         return '';
+    }
+
+    private function fill_generic_statistics(array $payload, array $league): array {
+        if (!empty($payload['statistics']) || !empty($payload['top_scorers'])) return $payload;
+        $id = (string) ($league['id'] ?? '');
+        if ($id !== 'persian-gulf-pro-league') return $payload;
+        $html = $this->fetch_url('https://football360.ir/league/statistics');
+        if (!$html) return $payload;
+        try {
+            $data = (new F360LS_Parser($html))->parse();
+        } catch (Throwable $e) {
+            return $payload;
+        }
+        if (empty($data['statistics']) && empty($data['top_scorers'])) return $payload;
+        return $this->merge_payloads($payload, $data, ['type' => 'url', 'kind' => 'statistics_generic', 'url' => 'https://football360.ir/league/statistics', 'path' => '']);
+    }
+
+    private function merge_live_results(array $payload): array {
+        $teams = [];
+        foreach (($payload['standings'] ?? []) as $row) {
+            $key = $this->logo_key((string) ($row['team'] ?? ''));
+            if ($key) $teams[$key] = true;
+        }
+        foreach (($payload['matches'] ?? []) as $match) {
+            $home = $this->logo_key((string) ($match['home'] ?? ''));
+            $away = $this->logo_key((string) ($match['away'] ?? ''));
+            if ($home) $teams[$home] = true;
+            if ($away) $teams[$away] = true;
+        }
+        if (!$teams) return $payload;
+        $html = $this->fetch_url('https://football360.ir/results');
+        if (!$html) return $payload;
+        try {
+            $data = (new F360LS_Parser($html))->parse();
+        } catch (Throwable $e) {
+            return $payload;
+        }
+        $picked = [];
+        foreach (($data['matches'] ?? []) as $match) {
+            $home = $this->logo_key((string) ($match['home'] ?? ''));
+            $away = $this->logo_key((string) ($match['away'] ?? ''));
+            if (!isset($teams[$home]) && !isset($teams[$away])) continue;
+            $picked[] = $match;
+        }
+        if (!$picked) return $payload;
+        return $this->merge_payloads($payload, [
+            'matches' => $picked,
+            'weeks' => [['title' => 'امروز', 'matches' => $picked]],
+        ], ['type' => 'url', 'kind' => 'live_results', 'url' => 'https://football360.ir/results', 'path' => '']);
     }
 
     public function empty_payload(array $league, string $message = ''): array {
