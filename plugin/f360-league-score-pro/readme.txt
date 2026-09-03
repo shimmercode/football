@@ -2,7 +2,7 @@
 Contributors: shimmercode
 Requires at least: 5.6
 Requires PHP: 7.4
-Stable tag: 3.12.2
+Stable tag: 3.12.3
 License: GPLv2 or later
 
 نمایش حرفه‌ای جدول لیگ‌ها، نتایج زنده، بازی‌های امروز، بازی‌های تیم‌ها، فرم تیم‌ها، اخبار و شورت‌کدهای اختصاصی از منابع آنلاین و فایل‌های HTML/JSON.
@@ -44,6 +44,9 @@ data/leagues/
 
 JSON files can be placed in:
 data/matches/
+
+v3.12.3:
+- رفع خطای syntax در parser که باعث از کار افتادن کل افزونه می‌شد
 
 v3.12.2:
 - رفع خالی شدن نقل‌وانتقالات به‌خاطر خطای متد ناموجود هنگام parse صفحه transfers

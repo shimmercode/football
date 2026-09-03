@@ -49,6 +49,7 @@ class F360LS_Parser {
 
         $payload = $this->make_payload($league, $weeks, $flat, $standings, $last_update, $description);
         $payload = $this->enrich_from_json($payload);
+        if (!empty($payload['standings'])) $payload['standings'] = $this->renumber_standings($payload['standings']);
         if (empty($payload['transfers'])) $payload['transfers'] = $this->parse_transfers($xpath);
         if (empty($payload['statistics'])) $payload['statistics'] = $this->parse_statistics($xpath);
         if (empty($payload['top_scorers']) && !empty($payload['statistics'])) {
@@ -352,9 +353,6 @@ class F360LS_Parser {
 
             $home = $this->clean_team($home);
             $away = $this->clean_team($away);
-            if (!$home || !$away) continue;
-
-            $status = trim($st$away = $this->clean_team($away);
             if (!$home || !$away) continue;
 
             $status = trim($status) ?: ($score ? 'پایان' : 'زمان نامشخص');
@@ -704,7 +702,12 @@ class F360LS_Parser {
 
     private function statistics_as_scorers(array $statistics): array {
         foreach ($statistics as $group) {
-            if (($group['title'] ?? '') === 'گل' || ($group['key'] ?? '') === 'goals') return $group['rows'array $payload): array {
+            if (($group['title'] ?? '') === 'گل' || ($group['key'] ?? '') === 'goals') return $group['rows'] ?? [];
+        }
+        return $statistics[0]['rows'] ?? [];
+    }
+
+    private function enrich_from_json(array $payload): array {
         if (!preg_match('~<script[^>]*id=["\']__NEXT_DATA__["\'][^>]*>(.*?)</script>~isu', $this->html, $m)) return $payload;
         $decoded = json_decode(html_entity_decode(trim($m[1]), ENT_QUOTES, 'UTF-8'), true);
         if (!is_array($decoded)) return $payload;
@@ -864,6 +867,7 @@ class F360LS_Parser {
         return strtr($text, ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9','٠'=>'0','١'=>'1','٢'=>'2','٣'=>'3','٤'=>'4','٥'=>'5','٦'=>'6','٧'=>'7','٨'=>'8','٩'=>'9']);
     }
 
+
     private function renumber_standings(array $standings): array {
         if (!$standings) return [];
         $out = [];
@@ -953,11 +957,6 @@ class F360LS_Parser {
         $href = trim((string) $href);
         if (!$href) return '';
         if (strpos($href, 'http') === 0) return $href;
-        if (strpos($href, '/') === 0) return 'https://football360.ir' . $href;
-        return '';
-    }
-}
-f;
         if (strpos($href, '/') === 0) return 'https://football360.ir' . $href;
         return '';
     }
