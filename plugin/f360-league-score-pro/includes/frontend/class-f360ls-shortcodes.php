@@ -562,17 +562,29 @@ public function league_tabs($atts): string {
     }
 
     private function render_matches_column(array $weeks, bool $live_only = false): string {
+        $page_weeks = [];
+        foreach ($weeks as $week) {
+            $week_matches = [];
+            foreach (($week['matches'] ?? []) as $m) {
+                if ($live_only && (($m['status_type'] ?? '') !== 'live')) continue;
+                $week_matches[] = $m;
+            }
+            if ($week_matches) $page_weeks[] = ['title' => $week['title'] ?? 'بازی‌ها', 'matches' => $week_matches];
+        }
+        if (!$page_weeks) return '<div class="f360ls-empty">بازی‌ای برای نمایش پیدا نشد.</div>';
         ob_start(); ?>
+        <div class="f360ls-pager" data-f360ls-pager="fixtures">
+            <?php if (count($page_weeks) > 1): ?>
+                <div class="f360ls-pager-nav" role="tablist">
+                    <?php foreach ($page_weeks as $pi => $week): ?>
+                        <button type="button" class="<?php echo $pi === 0 ? 'is-active' : ''; ?>" data-go-page="<?php echo (int) ($pi + 1); ?>"><?php echo esc_html($week['title'] ?: ('صفحه ' . ($pi + 1))); ?></button>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         <div class="f360ls-fixture-list">
-            <?php foreach ($weeks as $week):
-                $week_matches = [];
-                foreach (($week['matches'] ?? []) as $m) {
-                    if ($live_only && (($m['status_type'] ?? '') !== 'live')) continue;
-                    $week_matches[] = $m;
-                }
-                if (!$week_matches) continue;
-                $shown_date = '';
-                ?>
+            <?php foreach ($page_weeks as $pi => $week): $shown_date = ''; ?>
+                <div class="f360ls-pager-page" data-page="<?php echo (int) ($pi + 1); ?>" <?php echo $pi === 0 ? '' : 'hidden'; ?>>
+                <?php $week_matches = $week['matches']; ?>
                 <section class="f360ls-fixture-week">
                     <?php if (!empty($week['title'])): ?>
                         <h4 class="f360ls-fixture-week-title"><?php echo esc_html($week['title']); ?></h4>
@@ -628,7 +640,9 @@ public function league_tabs($atts): string {
                         </article>
                     <?php endforeach; ?>
                 </section>
+                </div>
             <?php endforeach; ?>
+        </div>
         </div><?php return ob_get_clean();
     }
     
@@ -667,9 +681,20 @@ public function league_tabs($atts): string {
 
     private function render_transfers_box(array $transfers): string {
         if (empty($transfers)) return '<div class="f360ls-empty">موردی پیدا نشد</div>';
+        $chunks = array_values(array_chunk($transfers, 8));
         ob_start(); ?>
+        <div class="f360ls-pager" data-f360ls-pager="transfers">
+            <?php if (count($chunks) > 1): ?>
+                <div class="f360ls-pager-nav" role="tablist">
+                    <?php foreach ($chunks as $pi => $_chunk): ?>
+                        <button type="button" class="<?php echo $pi === 0 ? 'is-active' : ''; ?>" data-go-page="<?php echo (int) ($pi + 1); ?>"><?php echo esc_html((string) ($pi + 1)); ?></button>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        <?php foreach ($chunks as $pi => $chunk): ?>
+        <div class="f360ls-pager-page" data-page="<?php echo (int) ($pi + 1); ?>" <?php echo $pi === 0 ? '' : 'hidden'; ?>>
         <div class="f360ls-transfer-list">
-            <?php foreach ($transfers as $row): ?>
+            <?php foreach ($chunk as $row): ?>
                 <article class="f360ls-transfer-row" data-search="<?php echo esc_attr(($row['player'] ?? '') . ' ' . ($row['from'] ?? '') . ' ' . ($row['to'] ?? '')); ?>">
                     <?php if (!empty($row['photo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($row['photo']); ?>" alt="<?php echo esc_attr($row['player'] ?? ''); ?>"><?php else: ?><span class="f360ls-player-placeholder">👤</span><?php endif; ?>
                     <div class="f360ls-transfer-meta">
@@ -683,6 +708,9 @@ public function league_tabs($atts): string {
                     </div>
                 </article>
             <?php endforeach; ?>
+        </div>
+        </div>
+        <?php endforeach; ?>
         </div>
         <?php return ob_get_clean();
     }

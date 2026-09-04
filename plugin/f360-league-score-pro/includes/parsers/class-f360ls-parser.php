@@ -38,7 +38,7 @@ class F360LS_Parser {
         $description = $this->text($xpath, "//*[contains(@class,'style_descBody__')][1]", $dom->documentElement);
 
         if (!$weeks) $weeks = $this->regex_matches_href($this->html);
-        if (!$standings) $standings = $this->regex_standings_href($this->html);
+        if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings_href($this->html);
         $standings = $this->renumber_standings(is_array($standings) ? $standings : []);
 
         $flat = [];
@@ -78,90 +78,86 @@ class F360LS_Parser {
     }
 
     private function parse_standings(DOMXPath $xpath): array {
-        $rows = $xpath->query("//div[contains(@class,'style_containerStandingTable__')]//tr | //table//tr[.//*[contains(@class,'style_name__')] or .//a[contains(@href,'/team/')]]");
+        $rows = $xpath->query("//table//tr[.//a[contains(@href,'/team/')]] | //*[@role='row'][.//a[contains(@href,'/team/')]]");
         $standings = [];
-
-        if (!$rows || !$rows->length) {
-            return [];
+        $seen = [];
+        if ($rows && $rows->length) {
+            foreach ($rows as $row) {
+                $mapped = $this->standing_from_row($xpath, $row);
+                if (!$mapped) continue;
+                $key = mb_strtolower($mapped['team'], 'UTF-8');
+                if (isset($seen[$key])) continue;
+                $seen[$key] = true;
+                $standings[] = $mapped;
+            }
         }
-
-        foreach ($rows as $row) {
-            $rank = $this->text($xpath, ".//*[contains(@class,'style_number__')][1]", $row);
-            $team = $this->text($xpath, ".//*[contains(@class,'style_name__')][1]", $row);
-            if (!$team) {
-                $team = $this->text($xpath, ".//a[contains(@href,'/team/')][1]", $row);
-                $team = preg_replace('/^\s*\d+\s*/u', '', $team);
-            }
-            if (!$team) {
-                $img = $xpath->query(".//img[@alt]", $row)->item(0);
-                if ($img instanceof DOMElement) $team = $this->clean_team($img->getAttribute('alt'));
-            }
-
-            if (!$team || preg_match('/^(نام تیم|تیم|رتبه)$/u', $team)) { continue; }
-
-            $logo = $this->attr($xpath, ".//img[1]", 'src', $row);
-            if (!$logo) {
-                $logo = $this->attr($xpath, ".//img[1]", 'srcset', $row);
-                $logo = $this->first_src_from_srcset($logo);
-            }
-
-            $cells = [];
-            $tds = $xpath->query("./td|./th", $row);
-            if ($tds) {
-                foreach ($tds as $td) {
-                    $txt = $this->clean($td->textContent);
-                    if ($txt !== '') $cells[] = $txt;
-                }
-            }
-            if (count($cells) < 3) {
-                if (preg_match_all('/[-+]?\d+(?:\s*[-–]\s*\d+)?|[۰-۹]+/u', $this->clean($row->textContent), $nm)) {
-                    foreach ($nm[0] as $num) $cells[] = $this->fa_to_en($num);
-                }
-            }
-
-            // Football360 table order: team | badge | played | won | draw | lost | diff | goals | points
-            $numeric = [];
-            foreach ($cells as $idx => $cell) {
-                if ($idx === 0) continue;
-                $cell = $this->clean($cell);
-                if ($cell !== '' && !preg_match('/^[آ-یA-Za-z\s]+$/u', $cell)) {
-                    $numeric[] = $cell;
-                }
-            }
-
-            $played = $numeric[0] ?? '';
-            $won    = $numeric[1] ?? '';
-            $draw   = $numeric[2] ?? '';
-            $lost   = $numeric[3] ?? '';
-            $diff   = $numeric[4] ?? '';
-            $goals  = $numeric[5] ?? '';
-            $points = $numeric[6] ?? ($this->text($xpath, ".//*[contains(@class,'style_boldLastChild__')][1]", $row));
-
-            if (!$rank && preg_match('/^\s*(\d+)/u', $cells[0] ?? '', $m)) {
-                $rank = $m[1];
-            }
-
-            $movement = 'equal';
-            $icon = $this->attr($xpath, ".//i[1]", 'class', $row);
-            if (strpos($icon, 'up') !== false) $movement = 'up';
-            if (strpos($icon, 'down') !== false) $movement = 'down';
-
-            $standings[] = [
-                'rank' => $this->clean($rank),
-                'team' => $this->clean($team),
-                'logo' => $this->normalize_src($logo),
-                'played' => $played,
-                'won' => $won,
-                'draw' => $draw,
-                'lost' => $lost,
-                'diff' => $diff,
-                'goals' => $goals,
-                'points' => $points,
-                'movement' => $movement,
-            ];
-        }
-
+        if ($this->standings_are_cloned($standings)) $standings = [];
         return $this->renumber_standings($standings);
+    }
+
+    private function standing_from_row(DOMXPath $xpath, $row): ?array {
+        $teamLinks = $xpath->query(".//a[contains(@href,'/team/')]", $row);
+        if (!$teamLinks || $teamLinks->length !== 1) return null;
+        $teamNode = $teamLinks->item(0);
+        if (!$teamNode instanceof DOMElement) return null;
+        $team = $this->clean_team($teamNode->textContent);
+        $img = $xpath->query('.//img', $teamNode)->item(0) ?: $xpath->query('.//img', $row)->item(0);
+        if (!$team && $img instanceof DOMElement) $team = $this->clean_team($img->getAttribute('alt'));
+        $team = preg_replace('/^\s*\d+\s*/u', '', (string) $team);
+        if (!$team || preg_match('/^(نام تیم|تیم|رتبه)$/u', $team)) return null;
+        $logo = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
+        $cells = [];
+        foreach ($xpath->query('./td|./th', $row) ?: [] as $td) {
+            $txt = $this->clean($td->textContent);
+            if ($txt !== '') $cells[] = $txt;
+        }
+        $blob = $cells ? implode(' | ', $cells) : $this->clean($row->textContent);
+        $tokens = $this->extract_stat_tokens($blob);
+        if (count($tokens) < 6) return null;
+        $mapped = $this->map_stat_tokens($tokens);
+        $mapped['team'] = $this->clean($team);
+        $mapped['logo'] = $logo;
+        $mapped['movement'] = 'equal';
+        return $mapped;
+    }
+
+    private function extract_stat_tokens(string $text): array {
+        $text = $this->fa_to_en($text);
+        if (!preg_match_all('/[-+]?\d+\s*[-–]\s*\d+|[-+]?\d+/u', $text, $m)) return [];
+        $tokens = [];
+        foreach ($m[0] as $tok) $tokens[] = preg_replace('/\s+/', '', $tok);
+        return $tokens;
+    }
+
+    private function map_stat_tokens(array $tokens): array {
+        $tokens = array_values($tokens);
+        $points = array_pop($tokens);
+        $goals = array_pop($tokens) ?? '';
+        $diff = array_pop($tokens) ?? '';
+        $lost = array_pop($tokens) ?? '';
+        $draw = array_pop($tokens) ?? '';
+        $won = array_pop($tokens) ?? '';
+        $played = array_pop($tokens) ?? '';
+        $rank = array_pop($tokens) ?? '';
+        return [
+            'rank' => (string) $rank,
+            'played' => (string) $played,
+            'won' => (string) $won,
+            'draw' => (string) $draw,
+            'lost' => (string) $lost,
+            'diff' => (string) $diff,
+            'goals' => (string) $goals,
+            'points' => (string) $points,
+        ];
+    }
+
+    private function standings_are_cloned(array $rows): bool {
+        if (count($rows) < 3) return false;
+        $sigs = [];
+        foreach ($rows as $row) {
+            $sigs[] = ($row['played'] ?? '') . '|' . ($row['won'] ?? '') . '|' . ($row['draw'] ?? '') . '|' . ($row['lost'] ?? '') . '|' . ($row['points'] ?? '') . '|' . ($row['goals'] ?? '');
+        }
+        return count(array_unique($sigs)) === 1;
     }
 
     private function parse_match_weeks(DOMXPath $xpath): array {
@@ -197,51 +193,22 @@ class F360LS_Parser {
         if (!$nodes) return [];
         foreach ($nodes as $teamNode) {
             if (!$teamNode instanceof DOMElement) continue;
-            $team = $this->clean_team($teamNode->textContent);
-            $img = $xpath->query('.//img', $teamNode)->item(0);
-            $logo = '';
-            if ($img instanceof DOMElement) {
-                if (!$team) $team = $this->clean_team($img->getAttribute('alt'));
-                $logo = $this->normalize_src($this->image_src($img));
-            }
-            if (!$team) continue;
             $box = $teamNode;
-            $row_text = '';
+            $row = null;
             for ($i = 0; $i < 8 && $box; $i++, $box = $box->parentNode) {
                 if (!$box instanceof DOMElement) continue;
-                $text = $this->clean($box->textContent);
-                $len = mb_strlen($text, 'UTF-8');
-                if ($len < 8 || $len > 220) continue;
-                if (preg_match_all('/[-+]?\d+(?:\s*[-–]\s*\d+)?|[۰-۹]+/u', $text, $nm) && count($nm[0]) >= 6) {
-                    $row_text = $text;
-                    break;
-                }
+                $team_count = $xpath->query('.//a[contains(@href,"/team/")]', $box)->length;
+                if ($team_count !== 1) continue;
+                $mapped = $this->standing_from_row($xpath, $box);
+                if ($mapped) { $row = $mapped; break; }
             }
-            if ($row_text === '') continue;
-            $numbers = [];
-            if (preg_match_all('/[-+]?\d+(?:\s*[-–]\s*\d+)?|[۰-۹]+(?:\s*[-–]\s*[۰-۹]+)?/u', $row_text, $nm)) {
-                foreach ($nm[0] as $num) $numbers[] = $this->fa_to_en($num);
-            }
-            if (count($numbers) < 6) continue;
-            $rank = array_shift($numbers);
-            $points = array_pop($numbers);
-            $key = mb_strtolower($team, 'UTF-8');
+            if (!$row) continue;
+            $key = mb_strtolower($row['team'], 'UTF-8');
             if (isset($seen[$key])) continue;
             $seen[$key] = true;
-            $standings[] = [
-                'rank' => $rank,
-                'team' => $team,
-                'logo' => $logo,
-                'played' => $numbers[0] ?? '',
-                'won' => $numbers[1] ?? '',
-                'draw' => $numbers[2] ?? '',
-                'lost' => $numbers[3] ?? '',
-                'diff' => $numbers[4] ?? '',
-                'goals' => $numbers[5] ?? '',
-                'points' => $points,
-                'movement' => 'equal',
-            ];
+            $standings[] = $row;
         }
+        if ($this->standings_are_cloned($standings)) return [];
         return $this->renumber_standings($standings);
     }
 
@@ -672,7 +639,7 @@ class F360LS_Parser {
                 ];
                 break;
             }
-            if (count($out) >= 80) break;
+            if (count($out) >= 120) break;
         }
         $seen = [];
         $clean = [];
@@ -997,7 +964,35 @@ class F360LS_Parser {
     }
 
     private function regex_standings_href(string $html): array {
-        return [];
+        $standings = [];
+        $seen = [];
+        if (!preg_match_all('/<tr[^>]*>(.*?)<\/tr>/isu', $html, $rows)) return [];
+        foreach ($rows[1] as $row) {
+            if (stripos($row, '/team/') === false) continue;
+            $team = '';
+            $logo = '';
+            if (preg_match('/<a[^>]+href=["\'][^"\']*\/team\/[^"\']+["\'][^>]*>(.*?)<\/a>/isu', $row, $tm)) {
+                $team = $this->strip($tm[1]);
+            }
+            if (preg_match('/alt=["\']([^"\']+)["\']/', $row, $am)) {
+                if (!$team) $team = $this->clean_team($am[1]);
+            }
+            $logo = $this->normalize_src($this->regex_img($row));
+            $team = preg_replace('/^\s*\d+\s*/u', '', $this->clean_team($team));
+            if (!$team || preg_match('/^(نام تیم|تیم|رتبه)$/u', $team)) continue;
+            $tokens = $this->extract_stat_tokens($this->strip($row));
+            if (count($tokens) < 6) continue;
+            $mapped = $this->map_stat_tokens($tokens);
+            $key = mb_strtolower($team, 'UTF-8');
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+            $mapped['team'] = $team;
+            $mapped['logo'] = $logo;
+            $mapped['movement'] = 'equal';
+            $standings[] = $mapped;
+        }
+        if ($this->standings_are_cloned($standings)) return [];
+        return $this->renumber_standings($standings);
     }
 
     private function first_src_from_srcset($srcset): string {

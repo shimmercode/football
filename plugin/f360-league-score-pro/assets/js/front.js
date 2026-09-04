@@ -265,6 +265,30 @@
       return [];
     }
 
+    function initPagers(scope){
+      (scope || wrap).querySelectorAll('[data-f360ls-pager]').forEach(function(pager){
+        if(pager.dataset.f360lsPagerBound === '1') return;
+        pager.dataset.f360lsPagerBound = '1';
+        var buttons = pager.querySelectorAll('[data-go-page]');
+        function show(n){
+          n = String(n || '1');
+          pager.querySelectorAll('[data-page]').forEach(function(page){
+            var on = page.getAttribute('data-page') === n;
+            page.hidden = !on;
+            page.classList.toggle('f360ls-is-hidden', !on);
+          });
+          buttons.forEach(function(b){
+            b.classList.toggle('is-active', b.getAttribute('data-go-page') === n);
+          });
+        }
+        buttons.forEach(function(b){
+          b.addEventListener('click', function(){
+            show(b.getAttribute('data-go-page') || '1');
+          });
+        });
+      });
+    }
+
     function updateLiveTabState(){
       var liveBtn = wrap.querySelector('[data-filter="live"]');
       if(!liveBtn) return;
@@ -318,6 +342,7 @@
 
     // ساخت کش یکبار پس از بارگذاری اولیه (وقتی DOM کامل است)
     buildCache();
+    initPagers(wrap);
 
     // نسخه debounced برای جست‌وجوی متنی
     var debouncedFilter = debounce(applyFilter, 200);
@@ -458,6 +483,7 @@
 
           // Re-init lazy widgets in refreshed content.
           initLazyWidgets(target);
+          initPagers(target);
           initFavorites(wrap);
           var filterBtn = wrap.querySelector('.f360ls-filter-buttons button.is-active');
           var type = filterBtn ? (filterBtn.getAttribute('data-filter') || 'standings') : 'standings';

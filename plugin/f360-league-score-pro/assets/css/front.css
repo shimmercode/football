@@ -3073,3 +3073,37 @@
     font-size: 14px;
   }
 }
+
+
+/* ===== PAGER (fixtures / transfers) ===== */
+.f360ls-pager-nav {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 0 0 12px;
+  padding: 2px 2px 8px;
+  scrollbar-width: none;
+}
+.f360ls-pager-nav::-webkit-scrollbar { display: none; }
+.f360ls-pager-nav button {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-family: inherit;
+  font-weight: 900;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.f360ls-pager-nav button.is-active {
+  background: var(--text);
+  color: var(--surface);
+  border-color: transparent;
+}
+.f360ls-pager-page[hidden] {
+  display: none !important;
+}
