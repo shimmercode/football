@@ -21,7 +21,9 @@ class F360LS_Parser {
         $xpath = new DOMXPath($dom);
 
         $league = $this->parse_league_meta($xpath);
-        $standings = $this->parse_standings($xpath);
+        $standings = $this->parse_official_table($xpath);
+        if (!$standings) $standings = $this->regex_standings($this->html);
+        if (!$standings) $standings = $this->parse_standings($xpath);
         if (!$standings) $standings = $this->parse_standings_generic($xpath);
         $weeks = $this->parse_schedule_page($xpath);
         if (!$weeks) $weeks = $this->parse_match_weeks($xpath);
@@ -107,19 +109,98 @@ class F360LS_Parser {
         $team = preg_replace('/^\s*\d+\s*/u', '', (string) $team);
         if (!$team || preg_match('/^(نام تیم|تیم|رتبه)$/u', $team)) return null;
         $logo = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
-        $cells = [];
-        foreach ($xpath->query('./td|./th', $row) ?: [] as $td) {
-            $txt = $this->clean($td->textContent);
-            if ($txt !== '') $cells[] = $txt;
+        $mapped = $this->map_row_numeric_cells($xpath, $row);
+        if (!$mapped) {
+            $cells = [];
+            foreach ($xpath->query('./td|./th', $row) ?: [] as $td) {
+                $txt = $this->clean($td->textContent);
+                if ($txt !== '') $cells[] = $txt;
+            }
+            $blob = $cells ? implode(' | ', $cells) : $this->clean($row->textContent);
+            $tokens = $this->extract_stat_tokens($blob);
+            if (count($tokens) < 6) return null;
+            $mapped = $this->map_stat_tokens($tokens);
         }
-        $blob = $cells ? implode(' | ', $cells) : $this->clean($row->textContent);
-        $tokens = $this->extract_stat_tokens($blob);
-        if (count($tokens) < 6) return null;
-        $mapped = $this->map_stat_tokens($tokens);
         $mapped['team'] = $this->clean($team);
         $mapped['logo'] = $logo;
-        $mapped['movement'] = 'equal';
+        $html = '';
+        if (method_exists($row, 'C14N')) $html = (string) $row->C14N();
+        $mapped['movement'] = (strpos($html, 'icon-up') !== false ? 'up' : (strpos($html, 'icon-down') !== false ? 'down' : 'equal'));
         return $mapped;
+    }
+
+    private function parse_official_table(DOMXPath $xpath): array {
+        $standings = [];
+        $seen = [];
+        $group = '';
+        $rows = $xpath->query("//tr[contains(@class,'style_content__')] | //*[contains(@class,'style_containerStandingTable__')]//tr[.//a[contains(@href,'/team/')]] | //table//tr[.//*[contains(@class,'style_name__')]]");
+        if (!$rows || !$rows->length) return [];
+        foreach ($rows as $row) {
+            if (!$row instanceof DOMElement) continue;
+            $team_links = $xpath->query(".//a[contains(@href,'/team/')]", $row);
+            if (!$team_links || !$team_links->length) {
+                $label = $this->clean($row->textContent);
+                if ($label !== '' && mb_strlen($label, 'UTF-8') <= 40 && preg_match('/گروه|Group|مرحله/u', $label)) $group = $label;
+                continue;
+            }
+            $mapped = $this->official_standing_from_row($xpath, $row);
+            if (!$mapped) $mapped = $this->standing_from_row($xpath, $row);
+            if (!$mapped) continue;
+            if ($group !== '') $mapped['group'] = $group;
+            $key = mb_strtolower($mapped['team'], 'UTF-8');
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+            $standings[] = $mapped;
+        }
+        if ($this->standings_are_cloned($standings)) return [];
+        return $this->renumber_standings($standings);
+    }
+
+    private function official_standing_from_row(DOMXPath $xpath, $row): ?array {
+        $name = $this->text($xpath, ".//*[contains(@class,'style_name__')]", $row);
+        $rank = $this->text($xpath, ".//*[contains(@class,'style_number__')]", $row);
+        $teamNode = $xpath->query(".//a[contains(@href,'/team/')]", $row)->item(0);
+        $img = $xpath->query('.//img', $row)->item(0);
+        if (!$name && $teamNode) $name = $this->clean_team($teamNode->textContent);
+        if (!$name && $img instanceof DOMElement) $name = $this->clean_team($img->getAttribute('alt'));
+        $name = preg_replace('/^\s*\d+\s*/u', '', (string) $name);
+        $name = $this->clean_team($name);
+        if (!$name || preg_match('/^(نام تیم|تیم|رتبه)$/u', $name)) return null;
+        $mapped = $this->map_row_numeric_cells($xpath, $row);
+        if (!$mapped) return null;
+        $html = '';
+        if (method_exists($row, 'C14N')) $html = (string) $row->C14N();
+        $mapped['rank'] = $this->fa_to_en($rank);
+        $mapped['team'] = $name;
+        $mapped['logo'] = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
+        $mapped['movement'] = (strpos($html, 'icon-up') !== false ? 'up' : (strpos($html, 'icon-down') !== false ? 'down' : 'equal'));
+        return $mapped;
+    }
+
+    private function map_row_numeric_cells(DOMXPath $xpath, $row): ?array {
+        $nums = [];
+        $tds = $xpath->query('./td', $row);
+        if (!$tds || !$tds->length) return null;
+        foreach ($tds as $i => $td) {
+            if ($i === 0) continue;
+            $txt = $this->fa_to_en($this->clean($td->textContent));
+            if ($txt === '') continue;
+            if (!preg_match('/^[-+]?\d+(?:\s*[-–]\s*\d+)?$/', $txt)) continue;
+            $nums[] = preg_replace('/\s+/', '', $txt);
+        }
+        if (count($nums) < 6) return null;
+        $vals = array_slice($nums, -7);
+        while (count($vals) < 7) array_unshift($vals, '');
+        return [
+            'rank' => '',
+            'played' => (string) $vals[0],
+            'won' => (string) $vals[1],
+            'draw' => (string) $vals[2],
+            'lost' => (string) $vals[3],
+            'diff' => (string) $vals[4],
+            'goals' => (string) $vals[5],
+            'points' => (string) $vals[6],
+        ];
     }
 
     private function extract_stat_tokens(string $text): array {
@@ -453,23 +534,29 @@ class F360LS_Parser {
             $numeric = [];
             foreach ($tds[1] ?? [] as $idx => $td) {
                 if ($idx === 0) continue;
-                $txt = $this->strip($td);
-                if ($txt !== '' && !preg_match('/^[آ-یA-Za-z\s]+$/u', $txt)) $numeric[] = $txt;
+                $txt = $this->fa_to_en($this->strip($td));
+                if ($txt === '') continue;
+                if (!preg_match('/^[-+]?\d+(?:\s*[-–]\s*\d+)?$/', $txt)) continue;
+                $numeric[] = preg_replace('/\s+/', '', $txt);
             }
+            if (count($numeric) < 6) continue;
+            $vals = array_slice($numeric, -7);
+            while (count($vals) < 7) array_unshift($vals, '');
             $standings[] = [
-                'rank' => $rank,
+                'rank' => $this->fa_to_en($rank),
                 'team' => $team,
                 'logo' => $this->normalize_src($logo),
-                'played' => $numeric[0] ?? '',
-                'won' => $numeric[1] ?? '',
-                'draw' => $numeric[2] ?? '',
-                'lost' => $numeric[3] ?? '',
-                'diff' => $numeric[4] ?? '',
-                'goals' => $numeric[5] ?? '',
-                'points' => $numeric[6] ?? '',
+                'played' => $vals[0],
+                'won' => $vals[1],
+                'draw' => $vals[2],
+                'lost' => $vals[3],
+                'diff' => $vals[4],
+                'goals' => $vals[5],
+                'points' => $vals[6],
                 'movement' => (strpos($row, 'icon-up') !== false ? 'up' : (strpos($row, 'icon-down') !== false ? 'down' : 'equal')),
             ];
         }
+        if ($this->standings_are_cloned($standings)) return [];
         return $standings;
     }
 
