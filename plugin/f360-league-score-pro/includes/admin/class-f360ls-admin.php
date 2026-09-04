@@ -130,7 +130,7 @@ class F360LS_Admin {
                     <tr><th><label for="source_url">لینک منبع اصلی (فوتبال۳۶۰)</label></th><td><input name="source_url" id="source_url" type="url" class="large-text" placeholder="https://football360.ir/league/..."><p class="description">اولویت با football360.ir است. اگر این سایت قطع باشد، لینک پشتیبان فوتبالی استفاده می‌شود.</p></td></tr>
                     <tr><th><label for="games_url">لینک اختصاصی بازی‌ها</label></th><td><input name="games_url" id="games_url" type="url" class="large-text" placeholder="https://football360.ir/league/.../games"><p class="description">اختیاری؛ معمولاً به‌صورت خودکار از لینک لیگ ساخته می‌شود.</p></td></tr>
                     <tr><th><label for="table_url">لینک اختصاصی جدول</label></th><td><input name="table_url" id="table_url" type="url" class="large-text" placeholder="https://football360.ir/league/..."><p class="description">اختیاری؛ لینک صفحه جدول فوتبال۳۶۰.</p></td></tr>
-                    <tr><th><label for="statistics_url">لینک آمار</label></th><td><input name="statistics_url" id="statistics_url" type="url" class="large-text" placeholder="https://football360.ir/league/.../statistics"></td></tr>
+                    <tr><th><label for="statistics_url">لینک آمار</label></th><td><input name="statistics_url" id="statistics_url" type="url" class="large-text" placeholder="https://football360.ir/league/.../statistics/players"></td></tr>
                     <tr><th><label for="transfers_url">لینک نقل و انتقالات</label></th><td><input name="transfers_url" id="transfers_url" type="url" class="large-text" placeholder="https://football360.ir/league/.../transfers"></td></tr>
                     <tr><th><label for="fallback_url">لینک پشتیبان (فوتبالی)</label></th><td><input name="fallback_url" id="fallback_url" type="url" class="large-text" placeholder="https://footballi.net/competition/..."><p class="description">فقط وقتی فوتبال۳۶۰ قطع باشد استفاده می‌شود.</p></td></tr>
                     <tr><th><label for="html_file">فایل HTML</label></th><td><input name="html_file" id="html_file" type="file" accept=".html,.htm"><p class="description">اگر لینک مستقیم کار نکرد، HTML ذخیره‌شده صفحه مرجع را آپلود کنید.</p></td></tr>
@@ -183,7 +183,7 @@ class F360LS_Admin {
                                 <?php wp_nonce_field('f360ls_clear_league_cache'); ?><input type="hidden" name="action" value="f360ls_clear_league_cache"><input type="hidden" name="league_id" value="<?php echo esc_attr($league['id']); ?>"><button class="button">پاک‌کردن کش</button>
                             </form>
                             <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline-block">
-                                <?php wp_nonce_field('f360ls_delete_league'); ?><input type="hidden" name="action" value="f360ls_delete_league"><input type="hidden" name="league_id" value="<?php echo esc_attr($league['id']); ?>"><button class="button button-link-delete" onclick="return confirm('حذف شود؟')">حذف</button>
+                                <?php wp_nonce_field('f360ls_delete_league'); ?><input type="hidden" name="action" value="f360ls_delete_league"><input type="hidden" name="league_id" value="<?php echo esc_attr($league['id']); ?>" class="button button-link-delete" onclick="return confirm('حذف شود؟')">حذف</button>
                             </form>
                         </td>
                     </tr>
@@ -521,7 +521,7 @@ class F360LS_Admin {
                 'source_url' => $source_url,
                 'games_url' => $games_url,
                 'table_url' => $table_url,
-                'statistics_url' => $is_f360 ? rtrim($source_url, '/') . '/statistics' : '',
+                'statistics_url' => $is_f360 ? rtrim($source_url, '/') . '/statistics/players' : '',
                 'transfers_url' => $is_f360 ? rtrim($source_url, '/') . '/transfers' : '',
                 'fallback_url' => $fallback_url,
                 'logo' => $league['logo'] ?? '',

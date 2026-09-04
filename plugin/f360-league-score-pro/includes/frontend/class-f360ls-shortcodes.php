@@ -664,16 +664,33 @@ public function league_tabs($atts): string {
         if (empty($statistics) && !empty($top_scorers)) {
             $statistics = [['key' => 'goals', 'title' => 'گل', 'rows' => $top_scorers]];
         }
-        if (empty($statistics)) return '<div class="f360ls-empty">موردی پیدا نشد</div>';
+        $pages = [];
+        foreach ($statistics as $group) {
+            $rows = $group['rows'] ?? [];
+            if (!$rows) continue;
+            $title = (string) ($group['title'] ?? '');
+            if (($group['kind'] ?? '') === 'team' && $title !== '' && mb_strpos($title, 'تیم', 0, 'UTF-8') === false) {
+                $title = 'تیم‌ها · ' . $title;
+            }
+            $pages[] = ['title' => $title !== '' ? $title : 'آمار', 'rows' => $rows];
+        }
+        if (!$pages) return '<div class="f360ls-empty">موردی پیدا نشد</div>';
         ob_start(); ?>
-        <div class="f360ls-statistics-stack">
-            <?php foreach ($statistics as $group):
-                $rows = $group['rows'] ?? [];
-                if (!$rows) continue; ?>
-                <section class="f360ls-stat-group">
-                    <h4><?php echo esc_html($group['title'] ?? ''); ?></h4>
-                    <?php echo $this->render_top_scorers_box($rows); ?>
-                </section>
+        <div class="f360ls-statistics-stack f360ls-pager" data-f360ls-pager="statistics">
+            <?php if (count($pages) > 1): ?>
+                <div class="f360ls-pager-nav" role="tablist">
+                    <?php foreach ($pages as $pi => $page): ?>
+                        <button type="button" class="<?php echo $pi === 0 ? 'is-active' : ''; ?>" data-go-page="<?php echo (int) ($pi + 1); ?>"><?php echo esc_html($page['title']); ?></button>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+            <?php foreach ($pages as $pi => $page): ?>
+                <div class="f360ls-pager-page" data-page="<?php echo (int) ($pi + 1); ?>" <?php echo $pi === 0 ? '' : 'hidden'; ?>>
+                    <section class="f360ls-stat-group">
+                        <h4><?php echo esc_html($page['title']); ?></h4>
+                        <?php echo $this->render_top_scorers_box($page['rows'], $page['title']); ?>
+                    </section>
+                </div>
             <?php endforeach; ?>
         </div>
         <?php return ob_get_clean();
@@ -715,17 +732,11 @@ public function league_tabs($atts): string {
         <?php return ob_get_clean();
     }
 
-  private function render_top_scorers_box(array $rows): string {
-    // فقط داده‌های گل نمایش داده می‌شود؛ تب پاس گل و مجموع حذف شده‌اند.
-    $goal_rows = array_values(array_filter($rows, function($row) {
-        $metric = $row['metric'] ?? 'goals';
-        return $metric === 'goals' || empty($row['metric']);
-    }));
-
-    // اگر منبع فقط یک نوع داده داده بود، برای خالی نشدن بخش همان را نمایش بده.
-    if (empty($goal_rows) && !empty($rows)) {
-        $goal_rows = $rows;
-    }
+  private function render_top_scorers_box(array $rows, string $value_label = 'گل'): string {
+    $goal_rows = array_values($rows);
+    $head_label = $value_label;
+    if (preg_match('/·\s*(.+)$/u', $value_label, $lm)) $head_label = trim($lm[1]);
+    if (mb_strlen($head_label, 'UTF-8') > 18) $head_label = 'عدد';
 
     ob_start();
     ?>
@@ -735,12 +746,12 @@ public function league_tabs($atts): string {
         <?php else: ?>
             <div class="f360ls-scorer-head">
                 <span>رتبه</span>
-                <span>بازیکن</span>
-                <span>گل</span>
+                <span><?php echo esc_html((($goal_rows[0]['kind'] ?? '') === 'team') ? 'تیم' : 'بازیکن'); ?></span>
+                <span><?php echo esc_html($head_label); ?></span>
             </div>
 
             <?php foreach (array_slice($goal_rows, 0, 30) as $i => $row):
-                $value = $row['goals'] ?? $row['value'] ?? '';
+                $value = $row['value'] ?? $row['goals'] ?? '';
                 ?>
                 <div class="f360ls-scorer-row" data-search="<?php echo esc_attr($row['name'] ?? ''); ?>">
                     <b><?php echo esc_html((string) ($i + 1)); ?></b>

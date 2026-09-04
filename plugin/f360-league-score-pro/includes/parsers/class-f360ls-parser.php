@@ -53,6 +53,7 @@ class F360LS_Parser {
         if (!empty($payload['standings'])) $payload['standings'] = $this->renumber_standings($payload['standings']);
         if (empty($payload['transfers'])) $payload['transfers'] = $this->parse_transfers($xpath);
         if (empty($payload['statistics'])) $payload['statistics'] = $this->parse_statistics($xpath);
+        if (empty($payload['statistics'])) $payload['statistics'] = $this->regex_statistics($this->html);
         if (empty($payload['top_scorers']) && !empty($payload['statistics'])) {
             $payload['top_scorers'] = $this->statistics_as_scorers($payload['statistics']);
         }
@@ -654,86 +655,216 @@ class F360LS_Parser {
 
     private function parse_statistics(DOMXPath $xpath): array {
         $groups = [];
-        $titles = [
-            'گل' => 'گل',
-            'پاس گل' => 'پاس گل',
-            'گل + پاس گل' => 'گل + پاس گل',
-            'گل+پاس گل' => 'گل + پاس گل',
-            'کلین‌شیت' => 'کلین‌شیت',
-            'کلین شیت' => 'کلین‌شیت',
-            'نمره متریکا' => 'نمره متریکا',
-            'امید گل' => 'امید گل',
-        ];
-        foreach ($xpath->query("//*[self::h2 or self::h3 or self::h4 or self::strong or contains(@class,'title') or contains(@class,'header')]") ?: [] as $head) {
-            $title = $this->clean($head->textContent);
-            $matched = '';
-            foreach ($titles as $needle => $label) {
-                if ($title === $needle || mb_stripos($title, $needle, 0, 'UTF-8') !== false) {
-                    $matched = $label;
-                    break;
+        $seen_row = [];
+        foreach (['player' => "/player/", 'team' => "team-statistic"] as $kind => $needle) {
+            $nodes = $xpath->query("//a[contains(@href,'" . $needle . "')]");
+            if (!$nodes) continue;
+            foreach ($nodes as $a) {
+                if (!$a instanceof DOMElement) continue;
+                $row = $this->statistic_row_from_anchor($xpath, $a, $kind);
+                if (!$row) continue;
+                $title = $this->nearest_stat_title($xpath, $a);
+                if ($title === '') continue;
+                $key = $this->statistic_group_key($title, $kind);
+                $uniq = $key . '|' . mb_strtolower($row['name'], 'UTF-8');
+                if (isset($seen_row[$uniq])) continue;
+                $seen_row[$uniq] = true;
+                if (!isset($groups[$key])) {
+                    $groups[$key] = ['key' => $key, 'kind' => $kind, 'title' => $title, 'rows' => []];
                 }
+                if (count($groups[$key]['rows']) >= 20) continue;
+                $row['rank'] = (string) (count($groups[$key]['rows']) + 1);
+                $groups[$key]['rows'][] = $row;
             }
-            if (!$matched) continue;
-            $container = $head->parentNode;
-            if (!$container instanceof DOMElement) continue;
-            $rows = $this->statistic_rows_from_node($xpath, $container);
-            if (!$rows && $container->parentNode instanceof DOMElement) $rows = $this->statistic_rows_from_node($xpath, $container->parentNode);
-            if (!$rows) continue;
-            $key = sanitize_key($matched);
-            $groups[$key] = ['key' => $key, 'title' => $matched, 'rows' => $rows];
         }
-        if (!$groups) {
-            $rows = $this->statistic_rows_from_node($xpath, null);
-            if ($rows) $groups['goals'] = ['key' => 'goals', 'title' => 'گل', 'rows' => $rows];
+        $out = [];
+        foreach ($groups as $group) {
+            if (!empty($group['rows'])) $out[] = $group;
         }
-        return array_values($groups);
+        return $out;
     }
 
-    private function statistic_rows_from_node(DOMXPath $xpath, $context): array {
-        $rows = [];
-        $query = ".//a[contains(@href,'/player/')]";
-        $nodes = $context ? $xpath->query($query, $context) : $xpath->query("//a[contains(@href,'/player/')]");
-        if (!$nodes) return [];
-        $rank = 0;
-        foreach ($nodes as $a) {
-            if (!$a instanceof DOMElement) continue;
-            $parent = $a->parentNode;
-            $parent_text = $parent ? $this->clean($parent->textContent) : '';
-            if (preg_match('/انتقال|قرضی/u', $parent_text)) continue;
-            $name = $this->clean_team($a->textContent);
-            $img = $xpath->query('.//img', $a)->item(0);
-            $photo = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
-            if (!$name && $img instanceof DOMElement) $name = $this->clean_team($img->getAttribute('alt'));
-            $text = $this->clean($a->textContent);
-            $value = '';
-            if (preg_match('/(\d+(?:\.\d+)?|[۰-۹]+(?:[٫.]\d+)?)\s*$/u', $text, $m)) $value = $this->fa_to_en($m[1]);
-            if ($value === '' && preg_match('/(\d+(?:\.\d+)?|[۰-۹]+(?:[٫.]\d+)?)\s*$/u', $parent_text, $m)) $value = $this->fa_to_en($m[1]);
-            if (!$name || $value === '') continue;
-            $name = preg_replace('/\s+\d+(?:\.\d+)?$/u', '', $name);
-            $team = '';
-            $parent = $a->parentNode;
-            if ($parent) {
-                $teamNode = $xpath->query('.//a[contains(@href,"/team/")]', $parent)->item(0);
-                if ($teamNode) $team = $this->clean_team($teamNode->textContent);
+    private function statistic_row_from_anchor(DOMXPath $xpath, DOMElement $a, string $kind): ?array {
+        $href = $this->normalize_href($a->getAttribute('href'));
+        if ($kind === 'player' && strpos($href, '/player/') === false) return null;
+        if ($kind === 'team' && stripos($href, 'team-statistic') === false) return null;
+        $box = $a;
+        $picked = null;
+        for ($i = 0; $i < 8 && $box; $i++, $box = $box->parentNode) {
+            if (!$box instanceof DOMElement) continue;
+            $query = ($kind === 'team')
+                ? ".//a[contains(@href,'team-statistic')]"
+                : ".//a[contains(@href,'/player/')]";
+            $count = $xpath->query($query, $box)->length;
+            if ($count !== 1) continue;
+            $text = $this->clean($box->textContent);
+            if ($kind === 'player' && preg_match('/انتقال|قرضی/u', $text)) return null;
+            $picked = $box;
+            break;
+        }
+        if (!$picked) return null;
+        $img = $xpath->query('.//img', $a)->item(0);
+        if (!$img instanceof DOMElement) $img = $xpath->query('.//img', $picked)->item(0);
+        $name = $this->clean_team($a->textContent);
+        if (!$name && $img instanceof DOMElement) $name = $this->clean_team($img->getAttribute('alt'));
+        $name = preg_replace('/\s+\d+(?:[.,]\d+)?$/u', '', (string) $name);
+        $name = $this->clean_team($name);
+        if (!$name) return null;
+        $blob = $this->fa_to_en($this->clean($picked->textContent));
+        if (!preg_match('/(\d+(?:\.\d+)?)\s*$/u', $blob, $m)) return null;
+        $value = $m[1];
+        $team = '';
+        $team_logo = '';
+        if ($kind === 'player') {
+            $teamNode = $xpath->query(".//a[contains(@href,'/team/')]", $picked)->item(0);
+            if ($teamNode instanceof DOMElement) {
+                $team = $this->clean_team($teamNode->textContent);
+                $tImg = $xpath->query('.//img', $teamNode)->item(0);
+                if ($tImg instanceof DOMElement) $team_logo = $this->normalize_src($this->image_src($tImg));
             }
-            $rank++;
-            $rows[] = [
-                'rank' => (string) $rank,
-                'name' => $this->clean_team($name),
-                'team' => $team,
+            if ($team === '') {
+                $rest = $this->fa_to_en($this->clean($picked->textContent));
+                $rest = preg_replace('/' . preg_quote($this->fa_to_en($name), '/') . '/u', '', $rest, 1);
+                $rest = trim(preg_replace('/' . preg_quote($value, '/') . '\s*$/u', '', $rest));
+                $rest = $this->clean_team($rest);
+                if ($rest !== '' && mb_strlen($rest, 'UTF-8') <= 40) $team = $rest;
+            }
+        }
+        $photo = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
+        return [
+            'rank' => '',
+            'name' => $name,
+            'team' => $team,
+            'team_logo' => $team_logo,
+            'value' => $value,
+            'goals' => $value,
+            'photo' => $photo,
+            'href' => $href,
+            'kind' => $kind,
+        ];
+    }
+
+    private function nearest_stat_title(DOMXPath $xpath, DOMElement $node): string {
+        $cur = $node;
+        for ($i = 0; $i < 10 && $cur; $i++, $cur = $cur->parentNode) {
+            if (!$cur instanceof DOMElement) continue;
+            $prev = $cur->previousSibling;
+            while ($prev) {
+                if ($prev instanceof DOMElement) {
+                    $nested = $xpath->query(".//a[contains(@href,'/player/') or contains(@href,'team-statistic')]", $prev);
+                    if (!$nested || !$nested->length) {
+                        $title = $this->normalize_stat_title($this->clean($prev->textContent));
+                        if ($this->looks_like_stat_title($title)) return $title;
+                    }
+                }
+                $prev = $prev->previousSibling;
+            }
+            foreach ($xpath->query('./h2|./h3|./h4|./h5|./strong|./span|./p|./div[1]', $cur) ?: [] as $el) {
+                if (!$el instanceof DOMElement) continue;
+                $nested = $xpath->query(".//a[contains(@href,'/player/') or contains(@href,'team-statistic')]", $el);
+                if ($nested && $nested->length) continue;
+                $title = $this->normalize_stat_title($this->clean($el->textContent));
+                if ($this->looks_like_stat_title($title)) return $title;
+            }
+        }
+        return '';
+    }
+
+    private function looks_like_stat_title(string $title): bool {
+        $title = trim($title);
+        if ($title === '' || mb_strlen($title, 'UTF-8') > 55) return false;
+        if (preg_match('/^(همه(?: آمارها)?|آمار (?:رقابت|بازیکنان|تیم‌ها)|نوع:.*|آخرین.*|Loading.*)$/u', $title)) return false;
+        if (preg_match('/جدول|هفته|رتبه|نام تیم|برنامه/u', $title)) return false;
+        return (bool) preg_match('/گل|پاس|کارت|کلین|متریکا|شوت|امید|مالکیت|خطا|کرنر|آفساید|پنالتی|سیو|تکل|سانتر|موقعیت|نمره|دفع|بازپس|توپ بلند|گل‌زده|گل خورده/u', $title);
+    }
+
+    private function normalize_stat_title(string $title): string {
+        $title = $this->clean($title);
+        $title = preg_replace('/^#+\s*/', '', $title);
+        $aliases = [
+            'گل‌' => 'گل',
+            'کلین شیت' => 'کلین‌شیت',
+            'کلين‌شيت' => 'کلین‌شیت',
+            'گل+پاس گل' => 'گل + پاس گل',
+            'گل +پاس گل' => 'گل + پاس گل',
+        ];
+        return $aliases[$title] ?? $title;
+    }
+
+    private function statistic_group_key(string $title, string $kind): string {
+        $map = [
+            'گل' => 'goals',
+            'پاس گل' => 'assists',
+            'گل + پاس گل' => 'goals_assists',
+            'نمره متریکا' => 'metrica',
+            'کلین‌شیت' => 'clean_sheet',
+            'امید گل' => 'xg',
+            'امید پاس گل' => 'xa',
+            'پنالتی گل کرده' => 'penalties_scored',
+            'پنالتی از دست داده' => 'penalties_missed',
+            'کارت زرد' => 'yellow',
+            'کارت قرمز' => 'red',
+            'گل زده' => 'goals_for',
+            'گل خورده' => 'goals_against',
+        ];
+        $slug = $map[$title] ?? ('s' . substr(md5($title), 0, 10));
+        return ($kind === 'team' ? 'team_' : '') . $slug;
+    }
+
+    private function regex_statistics(string $html): array {
+        $groups = [];
+        $pattern = '/<a[^>]+href=["\']([^"\']*(?:\/player\/|team-statistic)[^"\']*)["\'][^>]*>(.*?)<\/a>/isu';
+        if (!preg_match_all($pattern, $html, $items, PREG_SET_ORDER)) return [];
+        foreach ($items as $it) {
+            $href = $this->normalize_href($it[1] ?? '');
+            $body = $it[2] ?? '';
+            $kind = (stripos($href, 'team-statistic') !== false) ? 'team' : 'player';
+            if ($kind === 'player' && strpos($href, '/player/') === false) continue;
+            $name = $this->strip($body);
+            $alt = '';
+            if (preg_match('/alt=["\']([^"\']+)["\']/', $body, $am)) $alt = $this->clean_team($am[1]);
+            if (!$name) $name = $alt;
+            $name = preg_replace('/\s+\d+(?:[.,]\d+)?$/u', '', $name);
+            $name = $this->clean_team($name);
+            if (!$name) continue;
+            $photo = $this->normalize_src($this->regex_img($body));
+            $plain = $this->fa_to_en($this->strip($body));
+            $value = '';
+            if (preg_match('/(\d+(?:\.\d+)?)\s*$/u', $plain, $vm)) $value = $vm[1];
+            if ($value === '') continue;
+            $start = max(0, (int) strpos($html, $it[0]) - 1200);
+            $window = substr($html, $start, 1200);
+            $title = ($kind === 'team') ? 'آمار تیم‌ها' : 'گل';
+            if (preg_match_all('/>([^<]{2,55})</u', $window, $tm)) {
+                foreach (array_reverse($tm[1]) as $cand) {
+                    $cand = $this->normalize_stat_title($this->clean($cand));
+                    if ($this->looks_like_stat_title($cand)) { $title = $cand; break; }
+                }
+            }
+            $key = $this->statistic_group_key($title, $kind);
+            if (!isset($groups[$key])) $groups[$key] = ['key' => $key, 'kind' => $kind, 'title' => $title, 'rows' => []];
+            $dup = false;
+            foreach ($groups[$key]['rows'] as $exist) {
+                if (mb_strtolower($exist['name'], 'UTF-8') === mb_strtolower($name, 'UTF-8')) { $dup = true; break; }
+            }
+            if ($dup || count($groups[$key]['rows']) >= 20) continue;
+            $groups[$key]['rows'][] = [
+                'rank' => (string) (count($groups[$key]['rows']) + 1),
+                'name' => $name,
+                'team' => '',
                 'value' => $value,
                 'goals' => $value,
                 'photo' => $photo,
-                'href' => $this->normalize_href($a->getAttribute('href')),
+                'href' => $href,
+                'kind' => $kind,
             ];
-            if (count($rows) >= 30) break;
         }
-        return $rows;
+        return array_values(array_filter($groups, function($g) { return !empty($g['rows']); }));
     }
 
     private function statistics_as_scorers(array $statistics): array {
         foreach ($statistics as $group) {
-            if (($group['title'] ?? '') === 'گل' || ($group['key'] ?? '') === 'goals') return $group['rows'] ?? [];
+            if (($group['key'] ?? '') === 'goals' || ($group['title'] ?? '') === 'گل') return $group['rows'] ?? [];
         }
         return $statistics[0]['rows'] ?? [];
     }
