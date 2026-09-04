@@ -3107,3 +3107,190 @@
 .f360ls-pager-page[hidden] {
   display: none !important;
 }
+
+/* ===== MINIMAL STANDINGS ===== */
+.f360ls-description {
+  display: none !important;
+}
+.f360ls-table-minimal {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: auto;
+  background: var(--surface);
+}
+.f360ls-table-minimal .f360ls-standings-table {
+  min-width: 680px;
+  width: 100%;
+  border-collapse: collapse;
+  background: transparent;
+}
+.f360ls-table-minimal thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface) !important;
+  color: var(--muted) !important;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 11px 8px;
+  border-bottom: 1px solid var(--line);
+  letter-spacing: 0;
+  text-align: center;
+}
+.f360ls-table-minimal thead th:nth-child(2) {
+  text-align: right;
+}
+.f360ls-table-minimal tbody td {
+  padding: 10px 8px;
+  font-size: 13px;
+  font-weight: 650;
+  border-bottom: 1px solid var(--line);
+  background: transparent !important;
+  text-align: center;
+  color: var(--text) !important;
+}
+.f360ls-table-minimal tbody tr:last-child td {
+  border-bottom: 0;
+}
+.f360ls-table-minimal tbody tr:nth-child(even) td {
+  background: var(--soft) !important;
+}
+.f360ls-table-minimal tbody tr:hover td {
+  background: var(--surface2) !important;
+}
+.f360ls-table-minimal .team {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: right;
+  min-width: 196px;
+  font-weight: 850;
+}
+.f360ls-table-minimal .team img {
+  width: 28px !important;
+  height: 28px !important;
+  object-fit: contain !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+.f360ls-table-minimal .rank span {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+.f360ls-table-minimal .rank span.is-gold,
+.f360ls-table-minimal .rank span.is-silver,
+.f360ls-table-minimal .rank span.is-bronze {
+  background: transparent;
+  color: var(--text);
+}
+.f360ls-table-minimal .points,
+.f360ls-table-minimal .points em {
+  background: transparent !important;
+  color: var(--text) !important;
+  padding: 0;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 1000;
+  font-style: normal;
+}
+.f360ls-table-minimal .is-diff-pos {
+  color: var(--accent) !important;
+  font-weight: 800;
+}
+.f360ls-table-minimal .is-diff-neg {
+  color: var(--danger) !important;
+  font-weight: 800;
+}
+.f360ls-table-minimal tbody tr.is-top-rank,
+.f360ls-table-minimal tbody tr.is-top-rank td {
+  background: transparent;
+}
+.f360ls-table-minimal tbody tr.is-zone-europe td:first-child {
+  box-shadow: inset -2px 0 0 var(--accent);
+}
+.f360ls-table-minimal tbody tr.is-zone-relegation td:first-child {
+  box-shadow: inset -2px 0 0 var(--danger);
+}
+.f360ls-table-minimal .move {
+  display: none;
+}
+.f360ls-table-minimal th:nth-child(1),
+.f360ls-table-minimal td.rank {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--surface) !important;
+}
+.f360ls-table-minimal th:nth-child(2),
+.f360ls-table-minimal td.team {
+  position: sticky;
+  right: 46px;
+  z-index: 2;
+  background: var(--surface) !important;
+}
+.f360ls-table-minimal tbody tr:nth-child(even) td.rank,
+.f360ls-table-minimal tbody tr:nth-child(even) td.team {
+  background: var(--soft) !important;
+}
+.f360ls-table-minimal tbody tr:hover td.rank,
+.f360ls-table-minimal tbody tr:hover td.team {
+  background: var(--surface2) !important;
+}
+.f360ls-content-board .f360ls-board-standings .f360ls-table-minimal {
+  max-height: none;
+  border-radius: 14px;
+}
+
+@media (max-width: 680px) {
+  .f360ls-table-minimal {
+    overflow-x: auto;
+    border-radius: 12px;
+  }
+  .f360ls-table-minimal .f360ls-standings-table {
+    display: table !important;
+    min-width: 640px !important;
+    width: max-content;
+    background: transparent !important;
+  }
+  .f360ls-table-minimal .f360ls-standings-table thead {
+    display: table-header-group !important;
+  }
+  .f360ls-table-minimal .f360ls-standings-table tbody {
+    display: table-row-group !important;
+  }
+  .f360ls-table-minimal .f360ls-standings-table tr {
+    display: table-row !important;
+    width: auto !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+  }
+  .f360ls-table-minimal .f360ls-standings-table td,
+  .f360ls-table-minimal .f360ls-standings-table th {
+    display: table-cell !important;
+    width: auto !important;
+    text-align: center !important;
+    padding: 9px 7px !important;
+    border-bottom: 1px solid var(--line) !important;
+  }
+  .f360ls-table-minimal .f360ls-standings-table td:before {
+    display: none !important;
+    content: none !important;
+  }
+  .f360ls-table-minimal .team {
+    min-width: 160px;
+    justify-content: flex-start !important;
+  }
+}

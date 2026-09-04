@@ -531,7 +531,6 @@ public function league_tabs($atts): string {
         <?php endif; ?>
 
         <div class="f360ls-no-results">نتیجه‌ای برای جستجو/فیلتر در لیگ فعال پیدا نشد.</div>
-        <?php if (!empty($data['description'])): ?><details class="f360ls-description"><summary>درباره لیگ</summary><p><?php echo esc_html($data['description']); ?></p></details><?php endif; ?>
         <?php return ob_get_clean();
     }
 
@@ -539,7 +538,7 @@ public function league_tabs($atts): string {
         $last_group = null;
         $total = count($standings);
         ob_start(); ?>
-        <div class="f360ls-table-scroll f360ls-table-creative"><table class="f360ls-standings-table"><thead><tr><th>رتبه</th><th>تیم</th><th>بازی</th><th>برد</th><th>مساوی</th><th>باخت</th><th>تفاضل</th><th>گل +/-</th><th>امتیاز</th></tr></thead><tbody>
+        <div class="f360ls-table-scroll f360ls-table-minimal"><table class="f360ls-standings-table"><thead><tr><th>رتبه</th><th>تیم</th><th>بازی</th><th>برد</th><th>مساوی</th><th>باخت</th><th>تفاضل</th><th>گل +/-</th><th>امتیاز</th></tr></thead><tbody>
             <?php $display_rank = 0; foreach ($standings as $row):
                 $group = $row['group'] ?? '';
                 if ($group && $group !== $last_group): $last_group = $group; $display_rank = 0; ?>
@@ -551,11 +550,14 @@ public function league_tabs($atts): string {
                 $zone = '';
                 if ($rank > 0 && $rank <= 4) $zone = 'is-zone-europe';
                 elseif ($total >= 10 && $rank >= $total - 2) $zone = 'is-zone-relegation';
+                $diff = (string) ($row['diff'] ?? '');
+                $diff_plain = strtr($diff, ['−'=>'-','–'=>'-','۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']);
+                $diff_class = (strpos($diff_plain, '-') === 0) ? 'is-diff-neg' : (($diff_plain !== '' && $diff_plain !== '0') ? 'is-diff-pos' : '');
                 ?>
                 <tr class="<?php echo esc_attr(trim(($rank > 0 && $rank <= 3 ? 'is-top-rank ' : '') . $zone)); ?>" data-search="<?php echo esc_attr($row['team'] ?? ''); ?>">
-                    <td class="rank"><span class="<?php echo esc_attr($medal); ?>"><?php echo esc_html($rank); ?></span></td>
-                    <td class="team"><?php if (!empty($row['logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($row['logo']); ?>" alt="<?php echo esc_attr($row['team']); ?>"><?php endif; ?><span><?php echo esc_html($row['team'] ?? ''); ?></span><i class="move move-<?php echo esc_attr($row['movement'] ?? 'equal'); ?>"></i></td>
-                    <td><?php echo esc_html($row['played'] ?? ''); ?></td><td><?php echo esc_html($row['won'] ?? ''); ?></td><td><?php echo esc_html($row['draw'] ?? ''); ?></td><td><?php echo esc_html($row['lost'] ?? ''); ?></td><td><?php echo esc_html($row['diff'] ?? ''); ?></td><td><?php echo esc_html($row['goals'] ?? ''); ?></td><td class="points"><em><?php echo esc_html($row['points'] ?? ''); ?></em></td>
+                    <td class="rank"><span class="<?php echo esc_attr($medal); ?>"><?php echo esc_html((string) $rank); ?></span></td>
+                    <td class="team"><?php if (!empty($row['logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($row['logo']); ?>" alt="<?php echo esc_attr($row['team']); ?>"><?php endif; ?><span><?php echo esc_html($row['team'] ?? ''); ?></span></td>
+                    <td><?php echo esc_html($row['played'] ?? ''); ?></td><td><?php echo esc_html($row['won'] ?? ''); ?></td><td><?php echo esc_html($row['draw'] ?? ''); ?></td><td><?php echo esc_html($row['lost'] ?? ''); ?></td><td class="<?php echo esc_attr($diff_class); ?>"><?php echo esc_html($diff); ?></td><td><?php echo esc_html($row['goals'] ?? ''); ?></td><td class="points"><em><?php echo esc_html($row['points'] ?? ''); ?></em></td>
                 </tr>
             <?php endforeach; ?>
         </tbody></table></div><?php return ob_get_clean();
