@@ -614,6 +614,8 @@ public function league_tabs($atts): string {
                                 <?php if ($is_live): ?>
                                     <span class="f360ls-live-badge">زنده</span>
                                     <?php if (!empty($m['minute'])): ?><span class="f360ls-live-minute"><?php echo esc_html($m['minute']); ?>′</span><?php endif; ?>
+                                <?php elseif ($status_type === 'finished'): ?>
+                                    <span>پایان</span>
                                 <?php elseif ($kickoff !== ''): ?>
                                     <span><?php echo esc_html($kickoff); ?></span>
                                 <?php else: ?>
@@ -628,10 +630,8 @@ public function league_tabs($atts): string {
                                 <div class="f360ls-fixture-score" aria-label="<?php echo esc_attr($m['score'] ?? ''); ?>">
                                     <?php if ($home_score !== ''): ?>
                                         <b><?php echo esc_html($home_score); ?></b><i>-</i><b><?php echo esc_html($away_score); ?></b>
-                                    <?php elseif ($kickoff !== ''): ?>
-                                        <em><?php echo esc_html($kickoff); ?></em>
                                     <?php else: ?>
-                                        <em><?php echo esc_html(($m['score'] ?? '') !== '' ? $m['score'] : '—'); ?></em>
+                                        <em>—</em>
                                     <?php endif; ?>
                                 </div>
                                 <div class="f360ls-fixture-team is-away">

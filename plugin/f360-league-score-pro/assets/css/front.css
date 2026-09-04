@@ -3141,13 +3141,14 @@
   text-align: right;
 }
 .f360ls-table-minimal tbody td {
-  padding: 10px 8px;
+  padding: 10px 10px;
   font-size: 13px;
   font-weight: 650;
   border-bottom: 1px solid var(--line);
   background: transparent !important;
   text-align: center;
   color: var(--text) !important;
+  white-space: nowrap;
 }
 .f360ls-table-minimal tbody tr:last-child td {
   border-bottom: 0;
@@ -3165,6 +3166,7 @@
   text-align: right;
   min-width: 196px;
   font-weight: 850;
+  white-space: normal;
 }
 .f360ls-table-minimal .team img {
   width: 28px !important;
