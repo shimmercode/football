@@ -21,7 +21,8 @@ class F360LS_Parser {
         $xpath = new DOMXPath($dom);
 
         $league = $this->parse_league_meta($xpath);
-        $standings = $this->regex_official_table($this->html);
+        $standings = $this->regex_table_from_cells($this->html);
+        if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_official_table($this->html);
         if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->parse_official_table($xpath);
         if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings($this->html);
         if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->parse_standings($xpath);
@@ -199,6 +200,54 @@ class F360LS_Parser {
         if (method_exists($row, 'C14N')) $html = (string) $row->C14N();
         $mapped['movement'] = (strpos($html, 'icon-up') !== false ? 'up' : (strpos($html, 'icon-down') !== false ? 'down' : 'equal'));
         return $mapped;
+    }
+
+    private function regex_table_from_cells(string $html): array {
+        $standings = [];
+        $seen = [];
+        if (!preg_match_all('~<tr[^>]*>(.*?)</tr>~isu', $html, $rows)) return [];
+        foreach ($rows[1] as $row) {
+            if (stripos($row, '/team/') === false) continue;
+            $team = '';
+            $logo = $this->normalize_src($this->regex_img($row));
+            if (preg_match('~<a[^>]+href=["\'][^"\']*/team/[^"\']+["\'][^>]*>(.*?)</a>~isu', $row, $tm)) {
+                $team = $this->strip($tm[1]);
+            }
+            if ($team === '' && preg_match('/alt=["\']([^"\']+)["\']/', $row, $am)) $team = $this->clean_team($am[1]);
+            $team = preg_replace('/^\s*\d+\s*/u', '', $this->clean_team($team));
+            if (!$team || preg_match('/^(نام تیم|تیم|رتبه)$/u', $team)) continue;
+            $nums = [];
+            if (preg_match_all('~<td[^>]*>(.*?)</td>~isu', $row, $tds)) {
+                foreach ($tds[1] as $i => $td) {
+                    if ($i === 0) continue;
+                    $txt = preg_replace('/\s+/', '', $this->fa_to_en($this->strip($td)));
+                    if ($txt === '') continue;
+                    if (!preg_match('/^[-+]?\d+(?:[-–]\d+)?$/', $txt)) continue;
+                    $nums[] = $txt;
+                }
+            }
+            if (count($nums) < 6) continue;
+            $vals = array_slice($nums, -7);
+            while (count($vals) < 7) array_unshift($vals, '');
+            $key = mb_strtolower($team, 'UTF-8');
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+            $standings[] = [
+                'rank' => '',
+                'team' => $team,
+                'logo' => $logo,
+                'played' => $vals[0],
+                'won' => $vals[1],
+                'draw' => $vals[2],
+                'lost' => $vals[3],
+                'diff' => $vals[4],
+                'goals' => $vals[5],
+                'points' => $vals[6],
+                'movement' => (strpos($row, 'icon-up') !== false ? 'up' : (strpos($row, 'icon-down') !== false ? 'down' : 'equal')),
+            ];
+        }
+        if ($this->standings_are_cloned($standings)) return [];
+        return $this->renumber_standings($standings);
     }
 
     private function regex_official_table(string $html): array {

@@ -306,15 +306,14 @@ class F360LS_Repository {
         if ($f360_base) {
             $table_feed = $this->catalog_table_url($catalog, $table);
             if ($table_feed) $primary['table_url'] = $table_feed;
-            $primary['source_url'] = $f360_base;
             if (empty($primary['table_url'])) {
-                $primary['table_url'] = ($table && $this->is_football360_host($table) && !$this->is_generic_mixed_feed($table)) ? $table : $f360_base;
+                $primary['table_url'] = ($table && $this->is_football360_host($table) && !$this->is_generic_mixed_feed($table)) ? $table : '';
             }
-            $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
             $schedule = $this->catalog_matches_url($catalog, $games);
             $primary['games_url'] = $schedule ?: (($games && $this->is_football360_host($games) && !$this->is_generic_mixed_feed($games)) ? $games : ($f360_base . '/games'));
             $primary['statistics_url'] = $this->catalog_statistics_url($catalog, $statistics, $f360_base, 'players');
-            $primary['statistics_teams_url'] = $this->catalog_statistics_url($catalog, '', $f360_base, 'teams');
+            $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
+            $primary['source_url'] = $f360_base;
         } else {
             foreach (['source_url' => $source, 'games_url' => $games, 'table_url' => $table, 'statistics_url' => $statistics, 'transfers_url' => $transfers] as $kind => $url) {
                 if ($url && $this->is_football360_host($url) && !$this->is_generic_mixed_feed($url)) $primary[$kind] = $url;
@@ -452,13 +451,14 @@ class F360LS_Repository {
             return '';
         }
         $args = [
-            'timeout' => 12,
+            'timeout' => 15,
             'redirection' => 5,
             'sslverify' => true,
             'headers' => [
-                'User-Agent' => 'Mozilla/5.0 (compatible; F360LeagueScorePro/' . F360LS_VERSION . '; WordPress)',
-                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                'Accept-Language' => 'fa-IR,fa;q=0.9,en-US;q=0.6,en;q=0.5',
+                'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language' => 'fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Cache-Control' => 'no-cache',
             ],
         ];
         $response = wp_remote_get($url, $args);
