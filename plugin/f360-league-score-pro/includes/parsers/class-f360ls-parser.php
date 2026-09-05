@@ -9,62 +9,62 @@ class F360LS_Parser {
     }
 
     public function parse(): array {
-        if (!class_exists('DOMDocument')) {
-            return $this->parse_with_regex();
-        }
-
-        $dom = new DOMDocument('1.0', 'UTF-8');
-        libxml_use_internal_errors(true);
-        $dom->loadHTML('<?xml encoding="UTF-8">' . $this->html);
-        libxml_clear_errors();
-
-        $xpath = new DOMXPath($dom);
-
-        $league = $this->parse_league_meta($xpath);
         $standings = $this->regex_table_from_cells($this->html);
+        if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings_near_teams($this->html);
         if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_official_table($this->html);
-        if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->parse_official_table($xpath);
         if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings($this->html);
-        if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->parse_standings($xpath);
-        if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->parse_standings_generic($xpath);
-        if ($standings && $this->standings_are_cloned($standings)) $standings = [];
-        $weeks = $this->parse_schedule_page($xpath);
-        $rx_weeks = $this->regex_schedule_page($this->html);
-        if ($rx_weeks && count($rx_weeks) > count($weeks)) $weeks = $rx_weeks;
-        if (!$weeks) $weeks = $this->parse_match_weeks($xpath);
-        if (!$weeks) $weeks = $this->parse_matches_from_links($xpath);
-
-        $flat = [];
-        foreach ($weeks as $week) {
-            foreach (($week['matches'] ?? []) as $m) {
-                $flat[] = $m;
-            }
-        }
-
-        $last_update = $this->text($xpath, "//*[contains(@class,'style_lastUpdate__')][1]", $dom->documentElement);
-        $description = $this->text($xpath, "//*[contains(@class,'style_descBody__')][1]", $dom->documentElement);
-
-        if (!$weeks) $weeks = $this->regex_matches_href($this->html);
         if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings_href($this->html);
-        $standings = $this->renumber_standings(is_array($standings) ? $standings : []);
+        if ($standings && $this->standings_are_cloned($standings)) $standings = [];
 
+        $weeks = $this->regex_schedule_page($this->html);
+        if (!$weeks) $weeks = $this->regex_matches_href($this->html);
+
+        $last_update = '';
+        if (preg_match('/آخرین به‌روزرسانی:\s*([^<\n]+)/u', $this->html, $um)) $last_update = $this->clean($um[1]);
+
+        $statistics = $this->regex_statistics($this->html);
+        $transfers = method_exists($this, 'regex_transfers') ? $this->regex_transfers($this->html) : [];
+
+        $looks_table = (bool) preg_match('/امتیاز|style_name__|style_game__/u', $this->html);
+        $looks_matches = (bool) preg_match('/هفته\s*\d+/u', $this->html) && (bool) preg_match('~/matches/~', $this->html);
+        $looks_transfer = (bool) preg_match('/انتقال (?:قطعی|قرضی|آزاد)/u', $this->html);
+        $looks_stats = (bool) preg_match('/پاس گل|کلین|نمره متریکا/u', $this->html);
+
+        $need_dom = class_exists('DOMDocument') && (
+            ((!$standings || $this->standings_are_cloned($standings)) && $looks_table) ||
+            (!$weeks && $looks_matches) ||
+            (empty($transfers) && $looks_transfer) ||
+            (empty($statistics) && $looks_stats)
+        );
+
+        $league = ['title' => '', 'logo' => ''];
+        if ($need_dom) {
+            $dom = new DOMDocument('1.0', 'UTF-8');
+            libxml_use_internal_errors(true);
+            $dom->loadHTML('<?xml encoding="UTF-8">' . $this->html);
+            libxml_clear_errors();
+            $xpath = new DOMXPath($dom);
+            $league = $this->parse_league_meta($xpath);
+            if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->parse_official_table($xpath);
+            if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->parse_standings($xpath);
+            if ($standings && $this->standings_are_cloned($standings)) $standings = [];
+            if (!$weeks) $weeks = $this->parse_match_weeks($xpath);
+            if (!$weeks) $weeks = $this->parse_matches_from_links($xpath);
+            if ($last_update === '') $last_update = $this->text($xpath, "//*[contains(@class,'style_lastUpdate__')][1]", $dom->documentElement);
+            if (empty($transfers)) $transfers = $this->parse_transfers($xpath);
+            if (empty($statistics)) $statistics = $this->parse_statistics($xpath);
+        }
+
+        $standings = $this->renumber_standings(is_array($standings) ? $standings : []);
         $flat = [];
         foreach ($weeks as $week) {
-            foreach (($week['matches'] ?? []) as $m) {
-                $flat[] = $m;
-            }
+            foreach (($week['matches'] ?? []) as $m) $flat[] = $m;
         }
-
-        if ($last_update === '' && preg_match('/آخرین به‌روزرسانی:\s*([^<\n]+)/u', $this->html, $um)) {
-            $last_update = $this->clean($um[1]);
-        }
-        $payload = $this->make_payload($league, $weeks, $flat, $standings, $last_update, $description);
+        $payload = $this->make_payload($league, $weeks, $flat, $standings, $last_update, '');
         $payload = $this->enrich_from_json($payload);
         if (!empty($payload['standings'])) $payload['standings'] = $this->renumber_standings($payload['standings']);
-        $html_transfers = $this->merge_transfer_lists($this->parse_transfers($xpath), $this->regex_transfers($this->html));
-        if ($html_transfers) $payload['transfers'] = $this->merge_transfer_lists($payload['transfers'] ?? [], $html_transfers);
-        if (empty($payload['statistics'])) $payload['statistics'] = $this->parse_statistics($xpath);
-        if (empty($payload['statistics'])) $payload['statistics'] = $this->regex_statistics($this->html);
+        if (!empty($transfers)) $payload['transfers'] = $this->merge_transfer_lists($payload['transfers'] ?? [], is_array($transfers) ? $transfers : []);
+        if (empty($payload['statistics']) && !empty($statistics)) $payload['statistics'] = $statistics;
         if (empty($payload['top_scorers']) && !empty($payload['statistics'])) {
             $payload['top_scorers'] = $this->statistics_as_scorers($payload['statistics']);
         }
@@ -77,57 +77,55 @@ class F360LS_Parser {
 
     private function parse_monthly_best(): array {
         $out = [];
-        $html = $this->html;
-        if (!preg_match_all('~<img[^>]+src=["\']([^"\']*best-of-month/[^"\']+)["\'][^>]*>~i', $html, $imgs, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
-            return [];
-        }
         $seen = [];
+        $html = $this->html;
+        $plain = preg_replace('~<(script|style)\b[^>]*>.*?</\1>~isu', ' ', $html);
+        $plain = $this->strip($plain);
+        $plain = preg_replace('/معرفی نامزدها|معرفی نفر منتخب/u', "\n", $plain);
+        $re = '/(بهترین (?:بازیکن|سرمربی|گل|مهار))\s*((?:فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان|آذر|دی|بهمن|اسفند)(?:\s+و\s+(?:فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان|آذر|دی|بهمن|اسفند))?\s+[0-9۰-۹]{4})\s+(.+?)(?=بهترین |$)/u';
+        if (preg_match_all($re, $plain, $rows, PREG_SET_ORDER)) {
+            foreach ($rows as $row) {
+                $bits = preg_split('/\s+/u', trim($row[3]));
+                $bits = array_values(array_filter($bits, function($b) { return $b !== '' && !preg_match('/معرفی|نامزد|scroll/u', $b); }));
+                if (count($bits) < 2) continue;
+                $name = $this->clean_team(implode(' ', array_slice($bits, 0, 2)));
+                $team = $this->clean_team(implode(' ', array_slice($bits, 2)));
+                if ($name === '' || preg_match('/معرفی|نامزد|جایزه|فصل|نوع/u', $name)) continue;
+                $key = md5(mb_strtolower($row[1] . '|' . $row[2] . '|' . $name, 'UTF-8'));
+                if (isset($seen[$key])) continue;
+                $seen[$key] = true;
+                $photo = '';
+                if (preg_match('~best-of-month/[^"\']+\.(?:jpg|jpeg|png)[^"\']*~i', $html, $pm)) {
+                    $photo = $this->normalize_src($pm[0]);
+                }
+                $out[] = [
+                    'category' => $this->clean($row[1]),
+                    'period' => $this->clean($row[2]),
+                    'name' => $name,
+                    'team' => $team,
+                    'team_logo' => '',
+                    'photo' => $photo,
+                ];
+                if (count($out) >= 24) break;
+            }
+        }
+        if ($out) return $out;
+        if (!preg_match_all('~<img[^>]+src=["\']([^"\']*best-of-month/[^"\']+\.(?:jpg|jpeg|png)[^"\']*)["\'][^>]*>~i', $html, $imgs, PREG_SET_ORDER)) return [];
         foreach ($imgs as $im) {
-            $src = $this->normalize_src($im[1][0]);
+            $src = $this->normalize_src($im[1]);
             if ($src === '' || stripos($src, 'Icon_') !== false) continue;
-            if (preg_match('/(?:_04|_02|_01|_03)_/i', $src) && stripos($src, '/best-of-month/') !== false && preg_match('/Icon/i', $src)) continue;
-            $pos = (int) $im[0][1];
-            $window = substr($html, max(0, $pos - 2200), 2800);
-            $plain = $this->strip($window);
-            $category = '';
-            if (preg_match('/بهترین\\s*(بازیکن|سرمربی|گل|مهار)/u', $plain, $cm)) $category = 'بهترین ' . $cm[1];
-            $period = '';
-            if (preg_match('/((?:فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان|آذر|دی|بهمن|اسفند)(?:\\s+و\\s+(?:فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان|آذر|دی|بهمن|اسفند))?\\s+[0-9۰-۹]{4})/u', $plain, $pm)) {
-                $period = $this->clean($pm[1]);
-            }
-            $name = '';
-            if (preg_match('/alt=["\']([^"\']+)["\']/', $im[0][0], $am)) $name = $this->clean_team($am[1]);
-            if ($name === '' || in_array($name, ['بهترین بازیکن','بهترین سرمربی','بهترین گل','بهترین مهار'], true)) {
-                if (preg_match('/بهترین\\s*(?:بازیکن|سرمربی|گل|مهار)\\s*[^\\n]{0,40}\\s+([^\\n]{3,40})/u', $plain, $nm)) {
-                    $name = $this->clean_team($nm[1]);
-                }
-            }
-            $name = $this->clean_team($name);
-            if ($name === '' || mb_strlen($name, 'UTF-8') > 60) continue;
-            if (preg_match('/معرفی|نامزد|جایزه|فصل/u', $name)) continue;
-            $team = '';
-            $team_logo = '';
-            if (preg_match('~<a[^>]+href=["\'][^"\']*/team/[^"\']+["\'][^>]*>(.*?)</a>~isu', $window, $tm)) {
-                $team = $this->strip($tm[1]);
-                $team_logo = $this->normalize_src($this->regex_img($tm[1]));
-            }
-            if ($team === '' && preg_match_all('/<img[^>]+alt=["\']([^"\']+)["\'][^>]*>/u', $window, $alts)) {
-                foreach ($alts[1] as $alt) {
-                    $alt = $this->clean_team($alt);
-                    if ($alt === '' || $alt === $name || preg_match('/بهترین|معرفی/u', $alt)) continue;
-                    $team = $alt;
-                    break;
-                }
-            }
-            $key = md5(mb_strtolower($category . '|' . $period . '|' . $name, 'UTF-8'));
+            $alt = '';
+            if (preg_match('/alt=["\']([^"\']+)["\']/', $im[0], $am)) $alt = $this->clean_team($am[1]);
+            if ($alt === '' || preg_match('/بهترین|معرفی/u', $alt)) continue;
+            $key = md5(mb_strtolower($alt, 'UTF-8'));
             if (isset($seen[$key])) continue;
             $seen[$key] = true;
             $out[] = [
-                'category' => $category ?: 'بهترین‌های ماه',
-                'period' => $period,
-                'name' => $name,
-                'team' => $this->clean_team($team),
-                'team_logo' => $team_logo,
+                'category' => 'بهترین‌های ماه',
+                'period' => '',
+                'name' => $alt,
+                'team' => '',
+                'team_logo' => '',
                 'photo' => $src,
             ];
             if (count($out) >= 24) break;
@@ -200,6 +198,32 @@ class F360LS_Parser {
         if (method_exists($row, 'C14N')) $html = (string) $row->C14N();
         $mapped['movement'] = (strpos($html, 'icon-up') !== false ? 'up' : (strpos($html, 'icon-down') !== false ? 'down' : 'equal'));
         return $mapped;
+    }
+
+    private function regex_standings_near_teams(string $html): array {
+        $standings = [];
+        $seen = [];
+        if (!preg_match_all('~<a[^>]+href=["\'][^"\']*/team/[^"\']+["\'][^>]*>(.*?)</a>~isu', $html, $items, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) return [];
+        foreach ($items as $it) {
+            $chunk = substr($html, (int) $it[0][1], 700);
+            $team = $this->strip($it[1][0]);
+            if ($team === '' && preg_match('/alt=["\']([^"\']+)["\']/', $chunk, $am)) $team = $this->clean_team($am[1]);
+            $team = preg_replace('/^\s*\d+\s*/u', '', $this->clean_team($team));
+            if (!$team || preg_match('/^(نام تیم|تیم|رتبه)$/u', $team)) continue;
+            $key = mb_strtolower($team, 'UTF-8');
+            if (isset($seen[$key])) continue;
+            $tokens = $this->extract_stat_tokens($this->strip($chunk));
+            if (count($tokens) < 6) continue;
+            $mapped = $this->map_stat_tokens($tokens);
+            $mapped['team'] = $team;
+            $mapped['logo'] = $this->normalize_src($this->regex_img($chunk));
+            $mapped['movement'] = 'equal';
+            $seen[$key] = true;
+            $standings[] = $mapped;
+            if (count($standings) >= 24) break;
+        }
+        if ($this->standings_are_cloned($standings)) return [];
+        return $this->renumber_standings($standings);
     }
 
     private function regex_table_from_cells(string $html): array {

@@ -2,7 +2,7 @@
 Contributors: shimmercode
 Requires at least: 5.6
 Requires PHP: 7.4
-Stable tag: 3.12.15
+Stable tag: 3.12.16
 License: GPLv2 or later
 
 نمایش حرفه‌ای جدول لیگ‌ها، نتایج زنده، بازی‌های امروز، بازی‌های تیم‌ها، فرم تیم‌ها، اخبار و شورت‌کدهای اختصاصی از منابع آنلاین و فایل‌های HTML/JSON.
@@ -44,6 +44,9 @@ data/leagues/
 
 JSON files can be placed in:
 data/matches/
+
+v3.12.16:
+- لیگ‌های غیر انگلیس، هفته‌های کامل برنامه و بهترین‌های ماه
 
 v3.12.15:
 - اسکرپ جدول و بازی با User-Agent مرورگر و اولویت جدول/برنامه قبل از نقل‌وانتقالات

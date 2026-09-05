@@ -313,7 +313,6 @@ class F360LS_Repository {
             $primary['games_url'] = $schedule ?: (($games && $this->is_football360_host($games) && !$this->is_generic_mixed_feed($games)) ? $games : ($f360_base . '/games'));
             $primary['statistics_url'] = $this->catalog_statistics_url($catalog, $statistics, $f360_base, 'players');
             $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
-            $primary['source_url'] = $f360_base;
         } else {
             foreach (['source_url' => $source, 'games_url' => $games, 'table_url' => $table, 'statistics_url' => $statistics, 'transfers_url' => $transfers] as $kind => $url) {
                 if ($url && $this->is_football360_host($url) && !$this->is_generic_mixed_feed($url)) $primary[$kind] = $url;
@@ -451,7 +450,7 @@ class F360LS_Repository {
             return '';
         }
         $args = [
-            'timeout' => 15,
+            'timeout' => 10,
             'redirection' => 5,
             'sslverify' => true,
             'headers' => [
@@ -946,6 +945,9 @@ class F360LS_Repository {
         if (!$url) return $payload;
         $have = $payload['standings'] ?? [];
         if (count($have) >= 3 && !$this->standings_look_cloned($have)) return $payload;
+        foreach ($payload['sources'] ?? [] as $source) {
+            if (($source['kind'] ?? '') === 'table_url') return $payload;
+        }
         $html = $this->fetch_url($url);
         if (!$html) return $payload;
         try {
@@ -981,7 +983,7 @@ class F360LS_Repository {
             $url = esc_url_raw((string) ($item['url'] ?? ''));
             $key = strtolower(rtrim($url, '/'));
             if (!$url || isset($seen[$key])) continue;
-            if (strpos($key, 'footballi.net') !== false && count($payload['transfers'] ?? []) >= 200) continue;
+            if (strpos($key, 'footballi.net') !== false && count($payload['transfers'] ?? []) >= 5) continue;
             $html = $this->fetch_url($url);
             if (!$html) continue;
             try {
@@ -998,6 +1000,7 @@ class F360LS_Repository {
     }
 
     private function fill_league_statistics(array $payload, array $league): array {
+        if (!empty($payload['statistics'])) return $payload;
         $seen = [];
         foreach ($payload['sources'] ?? [] as $source) {
             $url = strtolower(rtrim((string) ($source['url'] ?? ''), '/'));
@@ -1008,10 +1011,6 @@ class F360LS_Repository {
         $urls = [];
         if ($base) {
             $urls[] = ['url' => rtrim($base, '/') . '/statistics/players', 'kind' => 'statistics_players'];
-            $urls[] = ['url' => rtrim($base, '/') . '/statistics/teams', 'kind' => 'statistics_teams'];
-        }
-        if ((string) ($league['id'] ?? '') === 'persian-gulf-pro-league') {
-            $urls[] = ['url' => 'https://football360.ir/league/statistics', 'kind' => 'statistics_generic'];
         }
         foreach ($urls as $item) {
             $url = $item['url'];
