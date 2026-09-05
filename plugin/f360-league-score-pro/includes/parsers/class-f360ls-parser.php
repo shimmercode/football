@@ -54,6 +54,9 @@ class F360LS_Parser {
             }
         }
 
+        if ($last_update === '' && preg_match('/آخرین به‌روزرسانی:\s*([^<\n]+)/u', $this->html, $um)) {
+            $last_update = $this->clean($um[1]);
+        }
         $payload = $this->make_payload($league, $weeks, $flat, $standings, $last_update, $description);
         $payload = $this->enrich_from_json($payload);
         if (!empty($payload['standings'])) $payload['standings'] = $this->renumber_standings($payload['standings']);
@@ -65,6 +68,70 @@ class F360LS_Parser {
             $payload['top_scorers'] = $this->statistics_as_scorers($payload['statistics']);
         }
         return $payload;
+    }
+
+    public function parse_monthly_best_public(): array {
+        return $this->parse_monthly_best();
+    }
+
+    private function parse_monthly_best(): array {
+        $out = [];
+        $html = $this->html;
+        if (!preg_match_all('~<img[^>]+src=["\']([^"\']*best-of-month/[^"\']+)["\'][^>]*>~i', $html, $imgs, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
+            return [];
+        }
+        $seen = [];
+        foreach ($imgs as $im) {
+            $src = $this->normalize_src($im[1][0]);
+            if ($src === '' || stripos($src, 'Icon_') !== false) continue;
+            if (preg_match('/(?:_04|_02|_01|_03)_/i', $src) && stripos($src, '/best-of-month/') !== false && preg_match('/Icon/i', $src)) continue;
+            $pos = (int) $im[0][1];
+            $window = substr($html, max(0, $pos - 2200), 2800);
+            $plain = $this->strip($window);
+            $category = '';
+            if (preg_match('/بهترین\\s*(بازیکن|سرمربی|گل|مهار)/u', $plain, $cm)) $category = 'بهترین ' . $cm[1];
+            $period = '';
+            if (preg_match('/((?:فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان|آذر|دی|بهمن|اسفند)(?:\\s+و\\s+(?:فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان|آذر|دی|بهمن|اسفند))?\\s+[0-9۰-۹]{4})/u', $plain, $pm)) {
+                $period = $this->clean($pm[1]);
+            }
+            $name = '';
+            if (preg_match('/alt=["\']([^"\']+)["\']/', $im[0][0], $am)) $name = $this->clean_team($am[1]);
+            if ($name === '' || in_array($name, ['بهترین بازیکن','بهترین سرمربی','بهترین گل','بهترین مهار'], true)) {
+                if (preg_match('/بهترین\\s*(?:بازیکن|سرمربی|گل|مهار)\\s*[^\\n]{0,40}\\s+([^\\n]{3,40})/u', $plain, $nm)) {
+                    $name = $this->clean_team($nm[1]);
+                }
+            }
+            $name = $this->clean_team($name);
+            if ($name === '' || mb_strlen($name, 'UTF-8') > 60) continue;
+            if (preg_match('/معرفی|نامزد|جایزه|فصل/u', $name)) continue;
+            $team = '';
+            $team_logo = '';
+            if (preg_match('~<a[^>]+href=["\'][^"\']*/team/[^"\']+["\'][^>]*>(.*?)</a>~isu', $window, $tm)) {
+                $team = $this->strip($tm[1]);
+                $team_logo = $this->normalize_src($this->regex_img($tm[1]));
+            }
+            if ($team === '' && preg_match_all('/<img[^>]+alt=["\']([^"\']+)["\'][^>]*>/u', $window, $alts)) {
+                foreach ($alts[1] as $alt) {
+                    $alt = $this->clean_team($alt);
+                    if ($alt === '' || $alt === $name || preg_match('/بهترین|معرفی/u', $alt)) continue;
+                    $team = $alt;
+                    break;
+                }
+            }
+            $key = md5(mb_strtolower($category . '|' . $period . '|' . $name, 'UTF-8'));
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+            $out[] = [
+                'category' => $category ?: 'بهترین‌های ماه',
+                'period' => $period,
+                'name' => $name,
+                'team' => $this->clean_team($team),
+                'team_logo' => $team_logo,
+                'photo' => $src,
+            ];
+            if (count($out) >= 24) break;
+        }
+        return $out;
     }
 
     private function parse_league_meta(DOMXPath $xpath): array {

@@ -3340,3 +3340,64 @@
     justify-content: flex-start !important;
   }
 }
+
+
+/* ===== LAST UPDATE + MONTHLY BEST ===== */
+.f360ls-last-update {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+.f360ls-monthly-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.f360ls-monthly-card {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface2);
+}
+.f360ls-monthly-card > img {
+  width: 72px;
+  height: 94px;
+  object-fit: cover;
+  border-radius: 12px;
+  background: var(--soft);
+}
+.f360ls-monthly-card small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+.f360ls-monthly-card strong {
+  display: block;
+  margin: 4px 0;
+  font-size: 14px;
+}
+.f360ls-monthly-card span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+}
+.f360ls-monthly-card span img {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+@media (max-width: 680px) {
+  .f360ls-monthly-grid {
+    grid-template-columns: 1fr;
+  }
+}

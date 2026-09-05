@@ -177,7 +177,10 @@ class F360LS_Repository {
         $payload = $this->fill_league_table($payload, $league);
         $payload = $this->fill_league_statistics($payload, $league);
         $payload = $this->fill_league_transfers($payload, $league);
+        $payload['monthly_best'] = $this->get_monthly_best();
         $payload = $this->repair_payload($payload);
+        $payload['standings'] = $this->sanitize_standings($payload['standings'] ?? []);
+        $payload['debug'] = $this->debug_snapshot($payload, $league);
 
         if (!$parsed_any) {
             $payload['message'] = 'منبع لیگ قابل خواندن نبود. اگر از لینک مستقیم استفاده می‌کنید، مطمئن شوید سرور شما به سایت مرجع دسترسی دارد.';
@@ -516,15 +519,12 @@ class F360LS_Repository {
         }
 
         if (!$stats_only && !$transfers_only && !empty($data['standings'])) {
-            $incoming = $data['standings'];
+            $incoming = $this->sanitize_standings($data['standings']);
             $incoming_ok = count($incoming) >= 2 && !$this->standings_look_cloned($incoming);
-            $current_bad = empty($base['standings']) || $this->standings_look_cloned($base['standings'] ?? []);
             if ($table_feed && $incoming_ok) {
                 $base['standings'] = $this->dedupe_standings($incoming);
-            } elseif ($current_bad && $incoming_ok) {
+            } elseif ($incoming_ok && (empty($base['standings']) || $this->standings_look_cloned($base['standings'] ?? []))) {
                 $base['standings'] = $this->dedupe_standings($incoming);
-            } else {
-                $base['standings'] = $this->dedupe_standings(array_merge($base['standings'] ?? [], $incoming));
             }
         }
         if (!$stats_only && !$table_feed && !$transfers_only && !empty($data['matches'])) {
@@ -931,27 +931,115 @@ class F360LS_Repository {
     private function standings_look_cloned(array $rows): bool {
         if (count($rows) < 3) return false;
         $sigs = [];
+        $pp = [];
         foreach ($rows as $row) {
-            $sigs[] = ($row['played'] ?? '') . '|' . ($row['won'] ?? '') . '|' . ($row['draw'] ?? '') . '|' . ($row['lost'] ?? '') . '|' . ($row['points'] ?? '') . '|' . ($row['goals'] ?? '');
+            $sig = ($row['played'] ?? '') . '|' . ($row['won'] ?? '') . '|' . ($row['draw'] ?? '') . '|' . ($row['lost'] ?? '') . '|' . ($row['points'] ?? '') . '|' . ($row['goals'] ?? '');
+            $sigs[] = $sig;
+            $pp[] = ($row['played'] ?? '') . '|' . ($row['points'] ?? '');
         }
-        return count(array_unique($sigs)) === 1;
+        if (count(array_unique($sigs)) === 1) return true;
+        $counts = array_count_values($pp);
+        $top = $counts ? max($counts) : 0;
+        return $top >= max(3, (int) ceil(count($rows) * 0.75));
+    }
+
+    private function sanitize_standings(array $rows): array {
+        $out = [];
+        $seen = [];
+        foreach ($rows as $row) {
+            if (!is_array($row)) continue;
+            $team = trim((string) ($row['team'] ?? ''));
+            if ($team === '') continue;
+            $key = mb_strtolower($team, 'UTF-8');
+            if (isset($seen[$key])) continue;
+            $played = $this->standing_number($row['played'] ?? '');
+            $won = $this->standing_number($row['won'] ?? '');
+            $draw = $this->standing_number($row['draw'] ?? '');
+            $lost = $this->standing_number($row['lost'] ?? '');
+            $points = $this->standing_number($row['points'] ?? '');
+            if ($played !== '' && (int) $played < 0) continue;
+            if ($won !== '' && (int) $won < 0) continue;
+            if ($draw !== '' && (int) $draw < 0) continue;
+            if ($lost !== '' && (int) $lost < 0) continue;
+            if ($points !== '' && (int) $points < 0) continue;
+            $seen[$key] = true;
+            $out[] = $row;
+        }
+        if ($this->standings_look_cloned($out)) return [];
+        return $out;
+    }
+
+    private function standing_number($value): string {
+        $value = preg_replace('/\s+/', '', strtr((string) $value, ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']));
+        return preg_match('/^-?\d+$/', $value) ? $value : '';
+    }
+
+    private function debug_snapshot(array $payload, array $league): array {
+        $settings = get_option(F360LS_OPTION_SETTINGS, []);
+        $on = is_array($settings) && (($settings['debug_mode'] ?? '0') === '1');
+        $snap = [
+            'league_id' => (string) ($league['id'] ?? ''),
+            'table_url' => (string) ($payload['table_url'] ?? ''),
+            'teams' => count($payload['standings'] ?? []),
+            'matches' => count($payload['matches'] ?? []),
+            'statistics_groups' => count($payload['statistics'] ?? []),
+            'transfers' => count($payload['transfers'] ?? []),
+            'monthly_best' => count($payload['monthly_best'] ?? []),
+            'cloned' => $this->standings_look_cloned($payload['standings'] ?? []),
+            'sources' => array_values(array_filter(array_map(function($s) { return $s['url'] ?? ''; }, $payload['sources'] ?? []))),
+        ];
+        if ($on && class_exists('F360LS_Logger')) {
+            F360LS_Logger::log('info', 'debug لیگ', $snap);
+        }
+        return $on ? $snap : [];
     }
 
     private function fill_league_table(array $payload, array $league): array {
         $catalog = $this->catalog_by_id((string) ($league['id'] ?? ''));
         $url = $this->catalog_table_url($catalog, (string) ($league['table_url'] ?? ''));
-        if (!$url) return $payload;
-        $have = $payload['standings'] ?? [];
-        if (count($have) >= 3 && !$this->standings_look_cloned($have)) return $payload;
+        $already = false;
+        foreach ($payload['sources'] ?? [] as $source) {
+            if (($source['kind'] ?? '') === 'table_url') $already = true;
+        }
+        if (!$url || $already) {
+            $payload['standings'] = $this->sanitize_standings($payload['standings'] ?? []);
+            return $payload;
+        }
         $html = $this->fetch_url($url);
-        if (!$html) return $payload;
+        if (!$html) {
+            $payload['standings'] = $this->sanitize_standings($payload['standings'] ?? []);
+            return $payload;
+        }
         try {
             $data = (new F360LS_Parser($html))->parse();
         } catch (Throwable $e) {
             return $payload;
         }
-        if (empty($data['standings']) || $this->standings_look_cloned($data['standings'])) return $payload;
-        return $this->merge_payloads($payload, $data, ['type' => 'url', 'kind' => 'table_url', 'url' => $url, 'path' => '']);
+        $incoming = $this->sanitize_standings($data['standings'] ?? []);
+        if (count($incoming) >= 2 && !$this->standings_look_cloned($incoming)) {
+            $payload['standings'] = $this->dedupe_standings($incoming);
+            if (!empty($data['last_update'])) $payload['last_update'] = $data['last_update'];
+            $payload['sources'][] = ['type' => 'url', 'kind' => 'table_url', 'url' => $url, 'path' => ''];
+        } else {
+            $payload['standings'] = $this->sanitize_standings($payload['standings'] ?? []);
+        }
+        return $payload;
+    }
+
+    public function get_monthly_best(): array {
+        $cache_key = F360LS_CACHE_PREFIX . 'monthly_best';
+        $cached = get_transient($cache_key);
+        if (is_array($cached)) return $cached;
+        $html = $this->fetch_url('https://football360.ir/monthly-best');
+        if (!$html) return [];
+        try {
+            $rows = (new F360LS_Parser($html))->parse_monthly_best_public();
+        } catch (Throwable $e) {
+            return [];
+        }
+        if (!is_array($rows)) $rows = [];
+        set_transient($cache_key, $rows, 6 * HOUR_IN_SECONDS);
+        return $rows;
     }
 
 
@@ -1074,6 +1162,7 @@ class F360LS_Repository {
             'top_scorers' => [],
             'statistics' => [],
             'transfers' => [],
+            'monthly_best' => [],
             'news' => [],
             'last_update' => '',
             'description' => '',

@@ -467,11 +467,12 @@ public function league_tabs($atts): string {
         <div class="f360ls-toolbar">
             <label class="f360ls-search"><span>جستجو</span><input type="search" class="f360ls-search-input" placeholder="نام تیم را جستجو کنید..."></label>
             <div class="f360ls-filter-buttons f360ls-content-tabs" role="tablist">
-                <button type="button" class="is-active" data-filter="standings">جدول</button>
+                <button type="button" class="is-active" data-filter="standings">جدول رده‌بندی</button>
                 <button type="button" data-filter="live">بازی‌های زنده <i class="f360ls-live-dot" aria-hidden="true"></i></button>
                 <button type="button" data-filter="statistics">آمار و ارقام</button>
                 <button type="button" data-filter="matches">برنامه بازی‌ها</button>
                 <button type="button" data-filter="transfers">نقل و انتقالات</button>
+                <button type="button" data-filter="monthly">بهترین‌های ماه</button>
             </div>
         </div>
         <?php return ob_get_clean();
@@ -487,9 +488,10 @@ public function league_tabs($atts): string {
         $top_scorers = $data['top_scorers'] ?? [];
         $statistics = $data['statistics'] ?? [];
         $transfers = $data['transfers'] ?? [];
+        $monthly = $data['monthly_best'] ?? [];
         $live_weeks = $this->live_weeks($weeks, $matches);
         $subtitle = $this->display_subtitle((string) ($data['subtitle'] ?? ''));
-        $has_any = !empty($matches) || !empty($standings) || !empty($top_scorers) || !empty($statistics) || !empty($transfers);
+        $has_any = !empty($matches) || !empty($standings) || !empty($top_scorers) || !empty($statistics) || !empty($transfers) || !empty($monthly);
         ?>
         <div class="f360ls-league-head f360ls-compact-head">
             <div class="f360ls-title-row">
@@ -508,6 +510,7 @@ public function league_tabs($atts): string {
             <div class="f360ls-footballi-board f360ls-content-board" data-f360ls-filter="standings">
                 <main class="f360ls-board-col f360ls-board-standings" data-content-type="standings">
                     <div class="f360ls-board-title">جدول رده‌بندی</div>
+                    <div class="f360ls-last-update"><?php echo esc_html($this->format_last_update((string) ($data['last_update'] ?? ''))); ?></div>
                     <?php echo !empty($standings) ? $this->render_standings_table($standings) : '<div class="f360ls-empty">جدولی برای این رقابت پیدا نشد.</div>'; ?>
                 </main>
                 <aside class="f360ls-board-col f360ls-board-live f360ls-is-hidden" data-content-type="live">
@@ -525,6 +528,10 @@ public function league_tabs($atts): string {
                 <aside class="f360ls-board-col f360ls-board-transfers f360ls-is-hidden" data-content-type="transfers">
                     <div class="f360ls-board-title">نقل و انتقالات</div>
                     <?php echo $this->render_transfers_box($transfers); ?>
+                </aside>
+                <aside class="f360ls-board-col f360ls-board-monthly f360ls-is-hidden" data-content-type="monthly">
+                    <div class="f360ls-board-title">بهترین‌های ماه</div>
+                    <?php echo $this->render_monthly_best($monthly); ?>
                 </aside>
             </div>
         <?php else: ?>
@@ -556,9 +563,9 @@ public function league_tabs($atts): string {
                 $diff_class = (strpos($diff_plain, '-') === 0) ? 'is-diff-neg' : (($diff_plain !== '' && $diff_plain !== '0') ? 'is-diff-pos' : '');
                 ?>
                 <tr class="<?php echo esc_attr(trim(($rank > 0 && $rank <= 3 ? 'is-top-rank ' : '') . $zone)); ?>" data-search="<?php echo esc_attr($row['team'] ?? ''); ?>">
-                    <td class="rank"><span class="<?php echo esc_attr($medal); ?>"><?php echo esc_html((string) $rank); ?></span></td>
+                    <td class="rank"><span class="<?php echo esc_attr($medal); ?>"><?php echo esc_html($this->fa_digits((string) $rank)); ?></span></td>
                     <td class="team"><?php if (!empty($row['logo'])): ?><img loading="lazy" decoding="async" src="<?php echo esc_url($row['logo']); ?>" alt="<?php echo esc_attr($row['team']); ?>"><?php endif; ?><span><?php echo esc_html($row['team'] ?? ''); ?></span></td>
-                    <td><?php echo esc_html($row['played'] ?? ''); ?></td><td><?php echo esc_html($row['won'] ?? ''); ?></td><td><?php echo esc_html($row['draw'] ?? ''); ?></td><td><?php echo esc_html($row['lost'] ?? ''); ?></td><td class="<?php echo esc_attr($diff_class); ?>"><?php echo esc_html($diff); ?></td><td><?php echo esc_html($row['goals'] ?? ''); ?></td><td class="points"><em><?php echo esc_html($row['points'] ?? ''); ?></em></td>
+                    <td><?php echo esc_html($this->fa_digits((string) ($row['played'] ?? ''))); ?></td><td><?php echo esc_html($this->fa_digits((string) ($row['won'] ?? ''))); ?></td><td><?php echo esc_html($this->fa_digits((string) ($row['draw'] ?? ''))); ?></td><td><?php echo esc_html($this->fa_digits((string) ($row['lost'] ?? ''))); ?></td><td class="<?php echo esc_attr($diff_class); ?>"><?php echo esc_html($this->fa_digits($diff)); ?></td><td><?php echo esc_html($this->fa_digits((string) ($row['goals'] ?? ''))); ?></td><td class="points"><em><?php echo esc_html($this->fa_digits((string) ($row['points'] ?? ''))); ?></em></td>
                 </tr>
             <?php endforeach; ?>
         </tbody></table></div><?php return ob_get_clean();
@@ -885,6 +892,40 @@ public function league_tabs($atts): string {
         $out = '<div class="f360ls-form-badges">';
         foreach ($form as $r) $out .= '<span class="form-' . esc_attr($r) . '" title="' . esc_attr($titles[$r] ?? $r) . '">' . esc_html($labels[$r] ?? $r) . '</span>';
         return $out . '</div>';
+    }
+
+    private function format_last_update(string $raw): string {
+        $raw = trim($raw);
+        if ($raw !== '' && preg_match('/آخرین به‌روزرسانی/u', $raw)) return $this->fa_digits($raw);
+        if ($raw !== '') return 'آخرین به‌روزرسانی: ' . $this->fa_digits($raw);
+        $ts = current_time('timestamp');
+        [$jy, $jm, $jd] = $this->gregorian_to_jalali((int) wp_date('Y', $ts), (int) wp_date('n', $ts), (int) wp_date('j', $ts));
+        $months = [1=>'فروردین',2=>'اردیبهشت',3=>'خرداد',4=>'تیر',5=>'مرداد',6=>'شهریور',7=>'مهر',8=>'آبان',9=>'آذر',10=>'دی',11=>'بهمن',12=>'اسفند'];
+        $month = $months[$jm] ?? (string) $jm;
+        $time = wp_date('H:i', $ts);
+        return $this->fa_digits(sprintf('آخرین به‌روزرسانی: %d %s %d - ساعت %s', $jd, $month, $jy, $time));
+    }
+
+    private function render_monthly_best(array $rows): string {
+        if (empty($rows)) return '<div class="f360ls-empty">موردی پیدا نشد</div>';
+        ob_start(); ?>
+        <div class="f360ls-monthly-grid">
+            <?php foreach ($rows as $row): ?>
+                <article class="f360ls-monthly-card" data-search="<?php echo esc_attr(($row['name'] ?? '') . ' ' . ($row['team'] ?? '') . ' ' . ($row['category'] ?? '')); ?>">
+                    <?php if (!empty($row['photo'])): ?>
+                        <img loading="lazy" decoding="async" src="<?php echo esc_url($row['photo']); ?>" alt="<?php echo esc_attr($row['name'] ?? ''); ?>">
+                    <?php endif; ?>
+                    <div>
+                        <small><?php echo esc_html($row['category'] ?? 'بهترین‌های ماه'); ?><?php if (!empty($row['period'])): ?> · <?php echo esc_html($row['period']); ?><?php endif; ?></small>
+                        <strong><?php echo esc_html($row['name'] ?? ''); ?></strong>
+                        <?php if (!empty($row['team'])): ?>
+                            <span><?php if (!empty($row['team_logo'])): ?><img src="<?php echo esc_url($row['team_logo']); ?>" alt=""><?php endif; ?><?php echo esc_html($row['team']); ?></span>
+                        <?php endif; ?>
+                    </div>
+                </article>
+            <?php endforeach; ?>
+        </div>
+        <?php return ob_get_clean();
     }
 
     private function display_subtitle(string $subtitle): string {

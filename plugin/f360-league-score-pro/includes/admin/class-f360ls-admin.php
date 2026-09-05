@@ -225,6 +225,7 @@ class F360LS_Admin {
                     <label class="f360ls-check"><input type="checkbox" name="show_source" value="1" <?php checked($s['show_source'], '1'); ?>><span>نمایش منبع دیتا</span></label>
                     <label class="f360ls-check"><input type="checkbox" name="show_hero" value="1" <?php checked($s['show_hero'], '1'); ?>><span>نمایش هدر گرافیکی</span></label>
                     <label class="f360ls-check"><input type="checkbox" name="animations" value="1" <?php checked($s['animations'], '1'); ?>><span>انیمیشن‌ها</span></label>
+                    <label class="f360ls-check"><input type="checkbox" name="debug_mode" value="1" <?php checked($s['debug_mode'] ?? '0', '1'); ?>><span>حالت دیباگ (فقط در گزارش ادمین، نه در سایت)</span></label>
                 </div>
                 <?php submit_button('ذخیره تنظیمات'); ?>
             </form>
@@ -397,7 +398,7 @@ class F360LS_Admin {
         return F360LS_Repository::instance()->catalog_leagues();
     }
     private function default_settings(): array {
-        return ['default_theme'=>'light','accent_color'=>'#16a34a','accent2_color'=>'#22c55e','background_color'=>'#f4f7fb','card_color'=>'#ffffff','text_color'=>'#0f172a','radius'=>'32','density'=>'comfortable','show_source'=>'0','show_hero'=>'1','auto_refresh'=>'0','hourly_cron'=>'1','refresh_interval'=>'60','live_cache_ttl'=>'45','default_cache_ttl'=>'21600','allowed_domains'=>"footballi.net\nfootball360.ir\ncdn.oddrun.ir\nstatic.football360.ir",'custom_font_url'=>'','animations'=>'1'];
+        return ['default_theme'=>'light','accent_color'=>'#16a34a','accent2_color'=>'#22c55e','background_color'=>'#f4f7fb','card_color'=>'#ffffff','text_color'=>'#0f172a','radius'=>'32','density'=>'comfortable','show_source'=>'0','show_hero'=>'1','auto_refresh'=>'0','hourly_cron'=>'1','refresh_interval'=>'60','live_cache_ttl'=>'45','default_cache_ttl'=>'21600','allowed_domains'=>"footballi.net\nfootball360.ir\ncdn.oddrun.ir\nstatic.football360.ir",'custom_font_url'=>'','animations'=>'1','debug_mode'=>'0'];
     }
 
     private function get_settings(): array {
@@ -456,6 +457,7 @@ class F360LS_Admin {
             'default_cache_ttl' => (string) max(300, min(86400, absint($_POST['default_cache_ttl'] ?? $d['default_cache_ttl']))),
             'allowed_domains' => $this->sanitize_domains((string) wp_unslash($_POST['allowed_domains'] ?? $d['allowed_domains'])),
             'animations' => !empty($_POST['animations']) ? '1' : '0',
+            'debug_mode' => !empty($_POST['debug_mode']) ? '1' : '0',
             'custom_font_url' => sanitize_text_field($d['custom_font_url'] ?? ''),
         ];
         $old_settings = $this->get_settings();
@@ -513,7 +515,8 @@ class F360LS_Admin {
             if ($source_url === 'https://footballi.net/live-scores') $source_url = '';
             $is_f360 = (strpos((string) $source_url, 'football360.ir') !== false);
             $games_url = $is_f360 ? rtrim($source_url, '/') . '/games' : ($source_url ?: '');
-            $table_url = $is_f360 ? $source_url : ($source_url ? rtrim($source_url, '/') . '/standing' : '');
+            $mid = strtolower(trim((string) ($league['matches_id'] ?? '')));
+            $table_url = (preg_match('/^[0-9a-f-]{36}$/', $mid)) ? ('https://football360.ir/league/table?id=' . $mid . '&query=full') : ($is_f360 ? $source_url : ($source_url ? rtrim($source_url, '/') . '/standing' : ''));
             $repo->upsert_league([
                 'id' => $league['id'],
                 'title' => $league['title'],
