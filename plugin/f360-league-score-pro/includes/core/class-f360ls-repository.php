@@ -177,9 +177,11 @@ class F360LS_Repository {
         $payload = $this->fill_league_table($payload, $league);
         $payload = $this->fill_league_statistics($payload, $league);
         $payload = $this->fill_league_transfers($payload, $league);
-        $payload['monthly_best'] = $this->get_monthly_best();
         $payload = $this->repair_payload($payload);
         $payload['standings'] = $this->sanitize_standings($payload['standings'] ?? []);
+        if (empty($payload['league']['title']) || preg_match('/جدول لیگ|برنامه بازی|آمار رقابت|نقل و انتقال|فوتبال ۳۶۰/u', (string) ($payload['league']['title'] ?? ''))) {
+            if (!empty($payload['configured_title'])) $payload['league']['title'] = $payload['configured_title'];
+        }
         $payload['debug'] = $this->debug_snapshot($payload, $league);
 
         if (!$parsed_any) {
@@ -306,15 +308,16 @@ class F360LS_Repository {
         if ($f360_base) {
             $table_feed = $this->catalog_table_url($catalog, $table);
             if ($table_feed) $primary['table_url'] = $table_feed;
-            $primary['source_url'] = $f360_base;
             if (empty($primary['table_url'])) {
-                $primary['table_url'] = ($table && $this->is_football360_host($table) && !$this->is_generic_mixed_feed($table)) ? $table : $f360_base;
+                $primary['table_url'] = ($table && $this->is_football360_host($table) && !$this->is_generic_mixed_feed($table)) ? $table : '';
             }
-            $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
             $schedule = $this->catalog_matches_url($catalog, $games);
             $primary['games_url'] = $schedule ?: (($games && $this->is_football360_host($games) && !$this->is_generic_mixed_feed($games)) ? $games : ($f360_base . '/games'));
             $primary['statistics_url'] = $this->catalog_statistics_url($catalog, $statistics, $f360_base, 'players');
-            $primary['statistics_teams_url'] = $this->catalog_statistics_url($catalog, '', $f360_base, 'teams');
+            $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
+            if (empty($primary['table_url']) && empty($primary['games_url'])) {
+                $primary['source_url'] = $f360_base;
+            }
         } else {
             foreach (['source_url' => $source, 'games_url' => $games, 'table_url' => $table, 'statistics_url' => $statistics, 'transfers_url' => $transfers] as $kind => $url) {
                 if ($url && $this->is_football360_host($url) && !$this->is_generic_mixed_feed($url)) $primary[$kind] = $url;
@@ -521,10 +524,13 @@ class F360LS_Repository {
         if (!$stats_only && !$transfers_only && !empty($data['standings'])) {
             $incoming = $this->sanitize_standings($data['standings']);
             $incoming_ok = count($incoming) >= 2 && !$this->standings_look_cloned($incoming);
+            $current_bad = empty($base['standings']) || $this->standings_look_cloned($base['standings'] ?? []);
             if ($table_feed && $incoming_ok) {
                 $base['standings'] = $this->dedupe_standings($incoming);
-            } elseif ($incoming_ok && (empty($base['standings']) || $this->standings_look_cloned($base['standings'] ?? []))) {
+            } elseif ($current_bad && $incoming_ok) {
                 $base['standings'] = $this->dedupe_standings($incoming);
+            } elseif ($incoming_ok && !$table_feed) {
+                $base['standings'] = $this->dedupe_standings(array_merge($base['standings'] ?? [], $incoming));
             }
         }
         if (!$stats_only && !$table_feed && !$transfers_only && !empty($data['matches'])) {
@@ -931,16 +937,10 @@ class F360LS_Repository {
     private function standings_look_cloned(array $rows): bool {
         if (count($rows) < 3) return false;
         $sigs = [];
-        $pp = [];
         foreach ($rows as $row) {
-            $sig = ($row['played'] ?? '') . '|' . ($row['won'] ?? '') . '|' . ($row['draw'] ?? '') . '|' . ($row['lost'] ?? '') . '|' . ($row['points'] ?? '') . '|' . ($row['goals'] ?? '');
-            $sigs[] = $sig;
-            $pp[] = ($row['played'] ?? '') . '|' . ($row['points'] ?? '');
+            $sigs[] = ($row['played'] ?? '') . '|' . ($row['won'] ?? '') . '|' . ($row['draw'] ?? '') . '|' . ($row['lost'] ?? '') . '|' . ($row['points'] ?? '') . '|' . ($row['goals'] ?? '');
         }
-        if (count(array_unique($sigs)) === 1) return true;
-        $counts = array_count_values($pp);
-        $top = $counts ? max($counts) : 0;
-        return $top >= max(3, (int) ceil(count($rows) * 0.75));
+        return count(array_unique($sigs)) === 1;
     }
 
     private function sanitize_standings(array $rows): array {
@@ -1066,7 +1066,7 @@ class F360LS_Repository {
             $url = esc_url_raw((string) ($item['url'] ?? ''));
             $key = strtolower(rtrim($url, '/'));
             if (!$url || isset($seen[$key])) continue;
-            if (strpos($key, 'footballi.net') !== false && count($payload['transfers'] ?? []) >= 200) continue;
+            if (strpos($key, 'footballi.net') !== false && count($payload['transfers'] ?? []) >= 8) continue;
             $html = $this->fetch_url($url);
             if (!$html) continue;
             try {

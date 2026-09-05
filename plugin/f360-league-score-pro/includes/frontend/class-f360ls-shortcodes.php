@@ -467,7 +467,7 @@ public function league_tabs($atts): string {
         <div class="f360ls-toolbar">
             <label class="f360ls-search"><span>جستجو</span><input type="search" class="f360ls-search-input" placeholder="نام تیم را جستجو کنید..."></label>
             <div class="f360ls-filter-buttons f360ls-content-tabs" role="tablist">
-                <button type="button" class="is-active" data-filter="standings">جدول رده‌بندی</button>
+                <button type="button" class="is-active" data-filter="standings">جدول</button>
                 <button type="button" data-filter="live">بازی‌های زنده <i class="f360ls-live-dot" aria-hidden="true"></i></button>
                 <button type="button" data-filter="statistics">آمار و ارقام</button>
                 <button type="button" data-filter="matches">برنامه بازی‌ها</button>
@@ -489,6 +489,7 @@ public function league_tabs($atts): string {
         $statistics = $data['statistics'] ?? [];
         $transfers = $data['transfers'] ?? [];
         $monthly = $data['monthly_best'] ?? [];
+        if (empty($monthly)) $monthly = F360LS_Repository::instance()->get_monthly_best();
         $live_weeks = $this->live_weeks($weeks, $matches);
         $subtitle = $this->display_subtitle((string) ($data['subtitle'] ?? ''));
         $has_any = !empty($matches) || !empty($standings) || !empty($top_scorers) || !empty($statistics) || !empty($transfers) || !empty($monthly);
