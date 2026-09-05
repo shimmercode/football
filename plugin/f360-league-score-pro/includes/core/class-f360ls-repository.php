@@ -304,13 +304,13 @@ class F360LS_Repository {
 
         $primary = [];
         if ($f360_base) {
+            $schedule = $this->catalog_matches_url($catalog, $games);
+            $primary['games_url'] = $schedule ?: (($games && $this->is_football360_host($games) && !$this->is_generic_mixed_feed($games)) ? $games : ($f360_base . '/games'));
             $table_feed = $this->catalog_table_url($catalog, $table);
             if ($table_feed) $primary['table_url'] = $table_feed;
             if (empty($primary['table_url'])) {
                 $primary['table_url'] = ($table && $this->is_football360_host($table) && !$this->is_generic_mixed_feed($table)) ? $table : '';
             }
-            $schedule = $this->catalog_matches_url($catalog, $games);
-            $primary['games_url'] = $schedule ?: (($games && $this->is_football360_host($games) && !$this->is_generic_mixed_feed($games)) ? $games : ($f360_base . '/games'));
             $primary['statistics_url'] = $this->catalog_statistics_url($catalog, $statistics, $f360_base, 'players');
             $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
         } else {
@@ -449,14 +449,18 @@ class F360LS_Repository {
             if (class_exists('F360LS_Logger')) F360LS_Logger::log('warning', 'دامنه منبع در لیست مجاز نیست.', ['url' => $url]);
             return '';
         }
+        $timeout = 10;
+        if (preg_match('~/league/matches~i', $url)) $timeout = 22;
+        elseif (preg_match('~/league/table~i', $url)) $timeout = 14;
         $args = [
-            'timeout' => 10,
+            'timeout' => $timeout,
             'redirection' => 5,
             'sslverify' => true,
             'headers' => [
                 'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                 'Accept-Language' => 'fa-IR,fa;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Accept-Encoding' => 'gzip, deflate',
                 'Cache-Control' => 'no-cache',
             ],
         ];
@@ -604,7 +608,12 @@ class F360LS_Repository {
         $out = [];
         $positions = [];
         foreach ($matches as $m) {
-            $key = md5(mb_strtolower(trim(($m['home'] ?? '') . '|' . ($m['away'] ?? '')), 'UTF-8'));
+            $href = trim((string) ($m['href'] ?? ''));
+            if ($href !== '') {
+                $key = 'href:' . md5($href);
+            } else {
+                $key = md5(mb_strtolower(trim(($m['home'] ?? '') . '|' . ($m['away'] ?? '') . '|' . ($m['date_label'] ?? '') . '|' . ($m['week'] ?? '')), 'UTF-8'));
+            }
             if (!isset($positions[$key])) {
                 $positions[$key] = count($out);
                 $out[] = $m;
@@ -851,26 +860,43 @@ class F360LS_Repository {
 
     private function ensure_week_pages(array $payload): array {
         $weeks = $payload['weeks'] ?? [];
-        $numbered = array_values(array_filter($weeks, function($w) {
-            return preg_match('/هفته\\s*\\d+/u', (string) ($w['title'] ?? '')) && !empty($w['matches']);
-        }));
+        $numbered = [];
+        foreach ($weeks as $w) {
+            $title = (string) ($w['title'] ?? '');
+            if (empty($w['matches'])) continue;
+            if (preg_match('/هفته\s*([0-9۰-۹]+)/u', $title, $wm)) {
+                $n = (int) strtr($wm[1], ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']);
+                if ($n >= 1 && $n <= 60) {
+                    $w['title'] = 'هفته ' . $n;
+                    $numbered[$n] = $w;
+                }
+            }
+        }
         if (count($numbered) >= 2) {
-            $payload['weeks'] = $numbered;
+            ksort($numbered, SORT_NUMERIC);
+            $payload['weeks'] = array_values($numbered);
+            $flat = [];
+            foreach ($payload['weeks'] as $w) {
+                foreach ($w['matches'] ?? [] as $m) $flat[] = $m;
+            }
+            if ($flat) $payload['matches'] = $flat;
             return $payload;
         }
         $matches = $payload['matches'] ?? [];
         if (count($matches) < 2) return $payload;
         $by_week = [];
         foreach ($matches as $m) {
+            $week_no = (int) ($m['week'] ?? 0);
             $label = (string) ($m['date_label'] ?? '');
-            $week_no = 0;
-            if (preg_match('/هفته\\s*(\\d+)/u', $label, $wm)) $week_no = (int) $wm[1];
+            if ($week_no < 1 && preg_match('/هفته\s*([0-9۰-۹]+)/u', $label, $wm)) {
+                $week_no = (int) strtr($wm[1], ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']);
+            }
             if ($week_no < 1) {
                 foreach ($weeks as $w) {
-                    if (preg_match('/هفته\\s*(\\d+)/u', (string) ($w['title'] ?? ''), $wm2)) {
+                    if (preg_match('/هفته\s*([0-9۰-۹]+)/u', (string) ($w['title'] ?? ''), $wm2)) {
                         foreach ($w['matches'] ?? [] as $wm) {
                             if (($wm['href'] ?? '') !== '' && ($wm['href'] ?? '') === ($m['href'] ?? '')) {
-                                $week_no = (int) $wm2[1];
+                                $week_no = (int) strtr($wm2[1], ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']);
                                 break 2;
                             }
                         }

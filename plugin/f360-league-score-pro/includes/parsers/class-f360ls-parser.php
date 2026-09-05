@@ -9,12 +9,25 @@ class F360LS_Parser {
     }
 
     public function parse(): array {
-        $standings = $this->regex_table_from_cells($this->html);
-        if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings_near_teams($this->html);
-        if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_official_table($this->html);
-        if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings($this->html);
-        if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings_href($this->html);
-        if ($standings && $this->standings_are_cloned($standings)) $standings = [];
+        if (function_exists('ini_set')) {
+            @ini_set('pcre.backtrack_limit', '4000000');
+            @ini_set('pcre.recursion_limit', '200000');
+        }
+
+        $looks_table = (bool) preg_match('/امتیاز|style_name__|style_game__/u', $this->html);
+        $looks_matches = (bool) preg_match('/هفته\s*[0-9۰-۹]+/u', $this->html) && (bool) preg_match('~/matches/~', $this->html);
+        $looks_transfer = (bool) preg_match('/انتقال (?:قطعی|قرضی|آزاد)/u', $this->html);
+        $looks_stats = (bool) preg_match('/پاس گل|کلین|نمره متریکا/u', $this->html);
+
+        $standings = [];
+        if ($looks_table || !$looks_matches) {
+            $standings = $this->regex_table_from_cells($this->html);
+            if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings_near_teams($this->html);
+            if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_official_table($this->html);
+            if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings($this->html);
+            if (!$standings || $this->standings_are_cloned($standings)) $standings = $this->regex_standings_href($this->html);
+            if ($standings && $this->standings_are_cloned($standings)) $standings = [];
+        }
 
         $weeks = $this->regex_schedule_page($this->html);
         if (!$weeks) $weeks = $this->regex_matches_href($this->html);
@@ -22,13 +35,8 @@ class F360LS_Parser {
         $last_update = '';
         if (preg_match('/آخرین به‌روزرسانی:\s*([^<\n]+)/u', $this->html, $um)) $last_update = $this->clean($um[1]);
 
-        $statistics = $this->regex_statistics($this->html);
-        $transfers = method_exists($this, 'regex_transfers') ? $this->regex_transfers($this->html) : [];
-
-        $looks_table = (bool) preg_match('/امتیاز|style_name__|style_game__/u', $this->html);
-        $looks_matches = (bool) preg_match('/هفته\s*\d+/u', $this->html) && (bool) preg_match('~/matches/~', $this->html);
-        $looks_transfer = (bool) preg_match('/انتقال (?:قطعی|قرضی|آزاد)/u', $this->html);
-        $looks_stats = (bool) preg_match('/پاس گل|کلین|نمره متریکا/u', $this->html);
+        $statistics = $looks_stats ? $this->regex_statistics($this->html) : [];
+        $transfers = ($looks_transfer && method_exists($this, 'regex_transfers')) ? $this->regex_transfers($this->html) : [];
 
         $need_dom = class_exists('DOMDocument') && (
             ((!$standings || $this->standings_are_cloned($standings)) && $looks_table) ||
@@ -308,70 +316,39 @@ class F360LS_Parser {
     }
 
     private function regex_schedule_page(string $html): array {
-        $heads = [];
-        if (!preg_match_all('~(جمعه|شنبه|یک‌شنبه|یکشنبه|دوشنبه|سه‌شنبه|چهارشنبه|پنج‌شنبه|پنجشنبه)[،,]\s*([^<]{2,40}?)\s*[-–]\s*هفته\s*(\d+)~u', $html, $hm, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
-            return [];
-        }
-        foreach ($hm as $h) {
-            $week_no = (int) $h[3][0];
-            if ($week_no < 1 || $week_no > 60) continue;
-            $full = $this->clean($h[0][0]);
-            $date_label = trim(preg_replace('~\s*[-–]\s*هفته\s*\d+\s*$~u', '', $full));
-            $heads[] = ['pos' => (int) $h[0][1], 'week' => $week_no, 'date_label' => $date_label];
-        }
-        if (!$heads) return [];
-        if (!preg_match_all('~<a[^>]+href=["\']([^"\']*/matches/[^"\']+)["\'][^>]*>(.*?)</a>~isu', $html, $items, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
-            return [];
-        }
+        $heads = $this->regex_week_heads($html);
+        $items = $this->regex_match_anchors($html);
+        if (!$items) return [];
         $by_week = [];
         $seen = [];
+        $head_i = 0;
+        $head_n = count($heads);
+        $chosen = null;
         foreach ($items as $it) {
-            $pos = (int) $it[0][1];
-            $chosen = null;
-            foreach ($heads as $head) {
-                if ($head['pos'] <= $pos) $chosen = $head;
+            $pos = (int) ($it['pos'] ?? 0);
+            while ($head_i < $head_n && $heads[$head_i]['pos'] <= $pos) {
+                $chosen = $heads[$head_i];
+                $head_i++;
             }
-            if (!$chosen) continue;
-            $href = $this->normalize_href($it[1][0]);
-            if ($href !== '' && isset($seen[$href])) continue;
-            if ($href !== '') $seen[$href] = true;
-            $body = $it[2][0];
-            $alts = [];
-            $logos = [];
-            if (preg_match_all('~<img[^>]+>~iu', $body, $imgs)) {
-                foreach ($imgs[0] as $tag) {
-                    $alt = '';
-                    $src = '';
-                    if (preg_match('~alt=["\']([^"\']*)["\']~', $tag, $am)) $alt = $this->clean_team($am[1]);
-                    if (preg_match('~src=["\']([^"\']+)["\']~', $tag, $sm)) $src = $this->normalize_src($sm[1]);
-                    if ($alt) { $alts[] = $alt; $logos[] = $src; }
+            $week_no = (int) ($chosen['week'] ?? 0);
+            $date_label = (string) ($chosen['date_label'] ?? '');
+            if ($week_no < 1) {
+                $back = substr($html, max(0, $pos - 1800), 1800);
+                if (preg_match_all('~هفته(?:</?[^>]+>|&nbsp;|\s)*([0-9۰-۹]{1,2})~u', $back, $wm)) {
+                    $week_no = (int) $this->fa_to_en((string) end($wm[1]));
+                    $date_label = $this->clean(strip_tags((string) end($wm[0])));
                 }
             }
-            if (count($alts) < 2) continue;
-            $text = $this->strip($body);
-            $plain = $this->fa_to_en($text);
-            $score = '—';
-            $status = '';
-            $kickoff = $this->extract_kickoff($plain);
-            if (preg_match('~(\d+)\s*[-–]\s*(\d+)~u', $plain, $sm)) $score = $sm[1] . ' - ' . $sm[2];
-            if (preg_match('~زنده|نیمه|پایان|تمام~u', $text, $stm)) $status = $stm[0];
-            if ($status === '' && $kickoff !== '') $status = $kickoff;
-            if ($status === '') $status = ($score !== '—') ? 'پایان' : 'زمان نامشخص';
-            $match = [
-                'home' => $alts[0],
-                'away' => $alts[1],
-                'score' => $score,
-                'status' => $status,
-                'status_type' => $this->status_type($status, $score),
-                'minute' => $this->extract_minute($status),
-                'date' => '',
-                'date_label' => $chosen['date_label'],
-                'home_logo' => $logos[0] ?? '',
-                'away_logo' => $logos[1] ?? '',
-                'href' => $href,
-            ];
-            $by_week[$chosen['week']]['title'] = 'هفته ' . $chosen['week'];
-            $by_week[$chosen['week']]['matches'][] = $match;
+            if ($week_no < 1 || $week_no > 60) $week_no = 0;
+            $href = $this->normalize_href((string) ($it['href'] ?? ''));
+            if ($href !== '' && isset($seen[$href])) continue;
+            if ($href !== '') $seen[$href] = true;
+            $match = $this->match_from_anchor_html($href, (string) ($it['body'] ?? ''), $date_label);
+            if (!$match) continue;
+            $match['week'] = $week_no;
+            $key = $week_no > 0 ? $week_no : 0;
+            $by_week[$key]['title'] = $week_no > 0 ? ('هفته ' . $week_no) : 'بازی‌ها';
+            $by_week[$key]['matches'][] = $match;
         }
         if (!$by_week) return [];
         ksort($by_week, SORT_NUMERIC);
@@ -380,6 +357,133 @@ class F360LS_Parser {
             if (!empty($week['matches'])) $weeks[] = $week;
         }
         return $weeks;
+    }
+
+    private function regex_week_heads(string $html): array {
+        $scan = preg_replace_callback('~<(script|style)\b[^>]*>.*?</\1>~isu', function($m) {
+            return str_repeat(' ', strlen($m[0]));
+        }, $html);
+        if (!is_string($scan) || $scan === '') $scan = $html;
+        $scan = preg_replace_callback('~<[^>]+>~', function($m) {
+            return str_repeat(' ', strlen($m[0]));
+        }, $scan);
+        if (!is_string($scan) || $scan === '') $scan = $html;
+        $heads = [];
+        $re = '~(جمعه|شنبه|یک‌شنبه|یکشنبه|دوشنبه|سه‌شنبه|سه\s?شنبه|چهارشنبه|پنج‌شنبه|پنجشنبه|پنج\s?شنبه).{0,80}?هفته\s*([0-9۰-۹]{1,2})~u';
+        if (!preg_match_all($re, $scan, $hm, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) return [];
+        foreach ($hm as $h) {
+            $week_no = (int) $this->fa_to_en((string) $h[2][0]);
+            if ($week_no < 1 || $week_no > 60) continue;
+            $pos = (int) $h[0][1];
+            $date_label = $this->clean($h[0][0]);
+            $heads[] = ['pos' => $pos, 'week' => $week_no, 'date_label' => $date_label];
+        }
+        return $heads;
+    }
+
+    private function regex_match_anchors(string $html): array {
+        $out = [];
+        $scripts = $this->script_ranges($html);
+        if (!preg_match_all('~<a\b[^>]*href=["\']([^"\']*/matches/[^"\']+)["\'][^>]*>~i', $html, $m, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
+            return [];
+        }
+        foreach ($m as $row) {
+            $pos = (int) $row[0][1];
+            if ($this->pos_in_ranges($scripts, $pos)) continue;
+            $from = $pos + strlen($row[0][0]);
+            $end = strpos($html, '</a>', $from);
+            if ($end === false) continue;
+            $body_len = $end - $from;
+            if ($body_len < 20 || $body_len > 8000) continue;
+            $out[] = [
+                'pos' => $pos,
+                'href' => $row[1][0],
+                'body' => substr($html, $from, $body_len),
+            ];
+        }
+        return $out;
+    }
+
+    private function script_ranges(string $html): array {
+        $ranges = [];
+        $offset = 0;
+        $len = strlen($html);
+        while ($offset < $len) {
+            $open = stripos($html, '<script', $offset);
+            if ($open === false) break;
+            $close = stripos($html, '</script', $open);
+            $end = ($close === false) ? $len : ($close + 9);
+            $ranges[] = [$open, $end];
+            $offset = $end;
+        }
+        return $ranges;
+    }
+
+    private function pos_in_ranges(array $ranges, int $pos): bool {
+        foreach ($ranges as $r) {
+            if ($pos >= $r[0] && $pos < $r[1]) return true;
+        }
+        return false;
+    }
+
+    private function match_from_anchor_html(string $href, string $body, string $date_label = ''): ?array {
+        $alts = [];
+        $logos = [];
+        if (preg_match_all('~<img[^>]+>~iu', $body, $imgs)) {
+            foreach ($imgs[0] as $tag) {
+                $alt = '';
+                $src = '';
+                if (preg_match('~alt=["\']([^"\']*)["\']~', $tag, $am)) $alt = $this->clean_team($am[1]);
+                if (preg_match('~src=["\']([^"\']+)["\']~', $tag, $sm)) $src = $this->normalize_src($sm[1]);
+                if ($alt !== '') {
+                    $alts[] = $alt;
+                    $logos[] = $src;
+                } elseif ($src !== '' && count($logos) < 2) {
+                    $logos[] = $src;
+                }
+            }
+        }
+        $text = $this->strip($body);
+        $plain = $this->fa_to_en($text);
+        if (count($alts) < 2) {
+            $stripped = preg_replace('/\d+\s*[-–]\s*\d+/u', ' ', $text);
+            $stripped = preg_replace('/زنده|نیمه|پایان|تمام|وقت اضافه|لغو|تعویق|\d{1,2}\s*[:：]\s*\d{2}/u', ' ', (string) $stripped);
+            $parts = array_values(array_filter(array_map([$this, 'clean_team'], preg_split('/\s{2,}|\s+-\s+/u', (string) $stripped))));
+            foreach ($parts as $part) {
+                if (mb_strlen($part, 'UTF-8') < 2) continue;
+                if (!in_array($part, $alts, true)) $alts[] = $part;
+                if (count($alts) >= 2) break;
+            }
+        }
+        if (count($alts) < 2) return null;
+        $score = '—';
+        $status = '';
+        $kickoff = $this->extract_kickoff($plain);
+        if (preg_match('~(\d+)\s*[-–]\s*(\d+)~u', $plain, $sm)) $score = $sm[1] . ' - ' . $sm[2];
+        if (preg_match('~زنده|نیمه|پایان|تمام|لغو|تعویق~u', $text, $stm)) $status = $stm[0];
+        if ($status === '' && $kickoff !== '') $status = $kickoff;
+        if ($status === '') $status = ($score !== '—') ? 'پایان' : 'زمان نامشخص';
+        return [
+            'home' => $alts[0],
+            'away' => $alts[1],
+            'score' => $score,
+            'status' => $status,
+            'status_type' => $this->status_type($status, $score),
+            'minute' => $this->extract_minute($status),
+            'date' => '',
+            'date_label' => $date_label,
+            'home_logo' => $logos[0] ?? '',
+            'away_logo' => $logos[1] ?? '',
+            'href' => $href,
+        ];
+    }
+
+    private function offset_inside_script(string $html, int $pos): bool {
+        $before = substr($html, 0, max(0, $pos));
+        $open = strripos($before, '<script');
+        if ($open === false) return false;
+        $close = strripos($before, '</script');
+        return $close === false || $open > $close;
     }
 
     private function parse_official_table(DOMXPath $xpath): array {
@@ -914,8 +1018,22 @@ class F360LS_Parser {
     private function extract_kickoff(string $text): string {
         $plain = $this->fa_to_en($text);
         if (!preg_match('/(?<!\d)(\d{1,2})\s*[:：]\s*(\d{2})(?!\d)/u', $plain, $m)) return '';
-        $hour = (int) $m[1];
-        $minute = (int) $m[2];
+        $a = (int) $m[1];
+        $b = (int) $m[2];
+        if ($a > 23 && $b <= 23) {
+            $hour = $b;
+            $minute = $a;
+        } elseif ($a <= 23 && $b <= 59) {
+            if (in_array($a, [0, 15, 30, 45], true) && $b <= 23) {
+                $hour = $b;
+                $minute = $a;
+            } else {
+                $hour = $a;
+                $minute = $b;
+            }
+        } else {
+            return '';
+        }
         if ($hour > 23 || $minute > 59) return '';
         return sprintf('%02d:%02d', $hour, $minute);
     }
@@ -1485,46 +1603,18 @@ class F360LS_Parser {
     }
 
     private function regex_matches_href(string $html): array {
+        $weeks = $this->regex_schedule_page($html);
+        if ($weeks) return $weeks;
+        $items = $this->regex_match_anchors($html);
+        if (!$items) return [];
         $matches = [];
-        if (!preg_match_all('/<a[^>]+href=["\']([^"\']*\/matches\/[^"\']+)["\'][^>]*>(.*?)<\/a>/isu', $html, $items, PREG_SET_ORDER)) {
-            return [];
-        }
+        $seen = [];
         foreach ($items as $it) {
-            $href = $this->normalize_href($it[1] ?? '');
-            $body = $it[2] ?? '';
-            $alts = [];
-            $logos = [];
-            if (preg_match_all('/<img[^>]+>/isu', $body, $imgs)) {
-                foreach ($imgs[0] as $tag) {
-                    $alt = '';
-                    $src = '';
-                    if (preg_match('/alt=["\']([^"\']*)["\']/', $tag, $am)) $alt = $this->clean_team($am[1]);
-                    if (preg_match('/src=["\']([^"\']+)["\']/', $tag, $sm)) $src = $this->normalize_src($sm[1]);
-                    if ($alt) { $alts[] = $alt; $logos[] = $src; }
-                }
-            }
-            $text = $this->strip($body);
-            $score = '—';
-            $status = '';
-            $plain = $this->fa_to_en($text);
-            $kickoff = $this->extract_kickoff($plain);
-            if (preg_match('/(\d+)\s*[-–]\s*(\d+)/u', $plain, $m)) $score = $m[1] . ' - ' . $m[2];
-            if (preg_match('/زنده|نیمه|پایان|تمام/u', $text, $sm)) $status = $sm[0];
-            if ($status === '' && $kickoff !== '') $status = $kickoff;
-            if (count($alts) < 2) continue;
-            if ($status === '') $status = ($score !== '—') ? 'پایان' : 'زمان نامشخص';
-            $matches[] = [
-                'home' => $alts[0],
-                'away' => $alts[1],
-                'score' => $score,
-                'status' => $status,
-                'status_type' => $this->status_type($status, $score),
-                'minute' => $this->extract_minute($status),
-                'date' => '',
-                'home_logo' => $logos[0] ?? '',
-                'away_logo' => $logos[1] ?? '',
-                'href' => $href,
-            ];
+            $href = $this->normalize_href((string) ($it['href'] ?? ''));
+            if ($href !== '' && isset($seen[$href])) continue;
+            if ($href !== '') $seen[$href] = true;
+            $match = $this->match_from_anchor_html($href, (string) ($it['body'] ?? ''), '');
+            if ($match) $matches[] = $match;
         }
         return $matches ? [['title' => 'بازی‌ها', 'matches' => $matches]] : [];
     }
