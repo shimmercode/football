@@ -3108,6 +3108,47 @@
   display: none !important;
 }
 
+.f360ls-build {
+  margin: 4px 0 0 !important;
+  color: var(--muted) !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+
+.f360ls-wrap table.f360ls-standings-table {
+  display: table !important;
+  width: 100% !important;
+  border-collapse: collapse !important;
+  table-layout: auto !important;
+}
+.f360ls-wrap .f360ls-standings-table thead {
+  display: table-header-group !important;
+}
+.f360ls-wrap .f360ls-standings-table tbody {
+  display: table-row-group !important;
+}
+.f360ls-wrap .f360ls-standings-table tr {
+  display: table-row !important;
+  width: auto !important;
+  float: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+.f360ls-wrap .f360ls-standings-table th,
+.f360ls-wrap .f360ls-standings-table td {
+  display: table-cell !important;
+  float: none !important;
+  width: auto !important;
+  max-width: none !important;
+}
+.f360ls-wrap .f360ls-standings-table td:before,
+.f360ls-wrap .f360ls-standings-table th:before {
+  content: none !important;
+  display: none !important;
+}
+
 /* ===== MINIMAL STANDINGS ===== */
 .f360ls-description {
   display: none !important;

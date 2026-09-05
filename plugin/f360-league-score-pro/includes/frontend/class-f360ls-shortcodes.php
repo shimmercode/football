@@ -498,6 +498,7 @@ public function league_tabs($atts): string {
                 </div>
                 <div>
                     <h3><?php echo esc_html($title); ?></h3>
+                    <p class="f360ls-build">نسخه <?php echo esc_html(F360LS_VERSION); ?></p>
                     <?php if ($subtitle !== ''): ?><p><?php echo esc_html($subtitle); ?></p><?php endif; ?>
                 </div>
             </div>
@@ -519,7 +520,7 @@ public function league_tabs($atts): string {
                 </aside>
                 <aside class="f360ls-board-col f360ls-board-matches f360ls-is-hidden" data-content-type="matches">
                     <div class="f360ls-board-title">برنامه بازی‌ها</div>
-                    <?php echo !empty($matches) ? $this->render_matches_column($weeks) : '<div class="f360ls-empty">بازی‌ای برای نمایش پیدا نشد.</div>'; ?>
+                    <?php echo !empty($weeks) ? $this->render_matches_column($weeks) : (!empty($matches) ? $this->render_matches_column([['title' => 'بازی‌ها', 'matches' => $matches]]) : '<div class="f360ls-empty">بازی‌ای برای نمایش پیدا نشد.</div>'); ?>
                 </aside>
                 <aside class="f360ls-board-col f360ls-board-transfers f360ls-is-hidden" data-content-type="transfers">
                     <div class="f360ls-board-title">نقل و انتقالات</div>

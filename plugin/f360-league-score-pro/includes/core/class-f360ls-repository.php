@@ -176,6 +176,7 @@ class F360LS_Repository {
         }
         $payload = $this->fill_league_table($payload, $league);
         $payload = $this->fill_league_statistics($payload, $league);
+        $payload = $this->repair_payload($payload);
 
         if (!$parsed_any) {
             $payload['message'] = 'منبع لیگ قابل خواندن نبود. اگر از لینک مستقیم استفاده می‌کنید، مطمئن شوید سرور شما به سایت مرجع دسترسی دارد.';
@@ -747,6 +748,181 @@ class F360LS_Repository {
         if (!$latest && !empty($league['file']) && file_exists($league['file'])) $latest = filemtime($league['file']);
         if ($latest) return 'آخرین بروزرسانی داده: ' . date_i18n(get_option('date_format') . ' - ' . get_option('time_format'), $latest);
         return '';
+    }
+
+    private function repair_payload(array $payload): array {
+        $payload = $this->rebuild_cloned_standings($payload);
+        $payload = $this->ensure_week_pages($payload);
+        $payload = $this->sanitize_statistic_teams($payload);
+        return $payload;
+    }
+
+    private function rebuild_cloned_standings(array $payload): array {
+        $have = $payload['standings'] ?? [];
+        $cloned = $this->standings_look_cloned($have);
+        if (!$cloned && count($have) >= 3) return $payload;
+        $finished = [];
+        foreach ($payload['matches'] ?? [] as $m) {
+            if (($m['status_type'] ?? '') !== 'finished') continue;
+            if (!preg_match('/(\\d+)\\s*[-–]\\s*(\\d+)/u', (string) ($m['score'] ?? ''), $s)) continue;
+            $m['_hg'] = (int) $s[1];
+            $m['_ag'] = (int) $s[2];
+            $finished[] = $m;
+        }
+        if (!$finished) return $payload;
+        $teams = [];
+        $touch = function(string $name, string $logo) use (&$teams) {
+            $key = $this->logo_key($name);
+            if ($key === '') return;
+            if (!isset($teams[$key])) {
+                $teams[$key] = ['team' => $name, 'logo' => $logo, 'played' => 0, 'won' => 0, 'draw' => 0, 'lost' => 0, 'gf' => 0, 'ga' => 0, 'points' => 0];
+            } elseif ($logo && empty($teams[$key]['logo'])) {
+                $teams[$key]['logo'] = $logo;
+            }
+        };
+        foreach ($have as $row) {
+            if (!empty($row['team'])) $touch((string) $row['team'], (string) ($row['logo'] ?? ''));
+        }
+        foreach ($finished as $m) {
+            $touch((string) ($m['home'] ?? ''), (string) ($m['home_logo'] ?? ''));
+            $touch((string) ($m['away'] ?? ''), (string) ($m['away_logo'] ?? ''));
+            $hk = $this->logo_key((string) ($m['home'] ?? ''));
+            $ak = $this->logo_key((string) ($m['away'] ?? ''));
+            if (!isset($teams[$hk], $teams[$ak])) continue;
+            $hg = $m['_hg'];
+            $ag = $m['_ag'];
+            $teams[$hk]['played']++;
+            $teams[$ak]['played']++;
+            $teams[$hk]['gf'] += $hg;
+            $teams[$hk]['ga'] += $ag;
+            $teams[$ak]['gf'] += $ag;
+            $teams[$ak]['ga'] += $hg;
+            if ($hg > $ag) {
+                $teams[$hk]['won']++;
+                $teams[$hk]['points'] += 3;
+                $teams[$ak]['lost']++;
+            } elseif ($ag > $hg) {
+                $teams[$ak]['won']++;
+                $teams[$ak]['points'] += 3;
+                $teams[$hk]['lost']++;
+            } else {
+                $teams[$hk]['draw']++;
+                $teams[$ak]['draw']++;
+                $teams[$hk]['points']++;
+                $teams[$ak]['points']++;
+            }
+        }
+        $rows = array_values($teams);
+        usort($rows, function($a, $b) {
+            if ($a['points'] !== $b['points']) return $b['points'] <=> $a['points'];
+            $ad = $a['gf'] - $a['ga'];
+            $bd = $b['gf'] - $b['ga'];
+            if ($ad !== $bd) return $bd <=> $ad;
+            return $b['gf'] <=> $a['gf'];
+        });
+        $out = [];
+        $rank = 0;
+        foreach ($rows as $r) {
+            $rank++;
+            $out[] = [
+                'rank' => (string) $rank,
+                'team' => $r['team'],
+                'logo' => $r['logo'],
+                'played' => (string) $r['played'],
+                'won' => (string) $r['won'],
+                'draw' => (string) $r['draw'],
+                'lost' => (string) $r['lost'],
+                'diff' => (string) ($r['gf'] - $r['ga']),
+                'goals' => $r['ga'] . '-' . $r['gf'],
+                'points' => (string) $r['points'],
+                'movement' => 'equal',
+            ];
+        }
+        if (count($out) >= 2 && !$this->standings_look_cloned($out)) {
+            $payload['standings'] = $out;
+        }
+        return $payload;
+    }
+
+    private function ensure_week_pages(array $payload): array {
+        $weeks = $payload['weeks'] ?? [];
+        $numbered = array_values(array_filter($weeks, function($w) {
+            return preg_match('/هفته\\s*\\d+/u', (string) ($w['title'] ?? '')) && !empty($w['matches']);
+        }));
+        if (count($numbered) >= 2) {
+            $payload['weeks'] = $numbered;
+            return $payload;
+        }
+        $matches = $payload['matches'] ?? [];
+        if (count($matches) < 2) return $payload;
+        $by_week = [];
+        foreach ($matches as $m) {
+            $label = (string) ($m['date_label'] ?? '');
+            $week_no = 0;
+            if (preg_match('/هفته\\s*(\\d+)/u', $label, $wm)) $week_no = (int) $wm[1];
+            if ($week_no < 1) {
+                foreach ($weeks as $w) {
+                    if (preg_match('/هفته\\s*(\\d+)/u', (string) ($w['title'] ?? ''), $wm2)) {
+                        foreach ($w['matches'] ?? [] as $wm) {
+                            if (($wm['href'] ?? '') !== '' && ($wm['href'] ?? '') === ($m['href'] ?? '')) {
+                                $week_no = (int) $wm2[1];
+                                break 2;
+                            }
+                        }
+                    }
+                }
+            }
+            $key = $week_no > 0 ? $week_no : 0;
+            $by_week[$key][] = $m;
+        }
+        if (isset($by_week[0]) && count($by_week) === 1) {
+            $per = count($payload['standings'] ?? []) >= 10 ? (int) max(6, intdiv(count($payload['standings']), 2)) : 10;
+            $chunks = array_chunk($matches, $per);
+            $payload['weeks'] = [];
+            foreach ($chunks as $i => $chunk) {
+                $payload['weeks'][] = ['title' => 'هفته ' . ($i + 1), 'matches' => $chunk];
+            }
+            return $payload;
+        }
+        ksort($by_week, SORT_NUMERIC);
+        $out = [];
+        foreach ($by_week as $num => $ms) {
+            if (!$ms) continue;
+            $out[] = ['title' => $num > 0 ? ('هفته ' . $num) : 'بازی‌ها', 'matches' => $ms];
+        }
+        if (count($out) >= 2) $payload['weeks'] = $out;
+        return $payload;
+    }
+
+    private function sanitize_statistic_teams(array $payload): array {
+        foreach ($payload['statistics'] ?? [] as $gi => $group) {
+            $rows = $group['rows'] ?? [];
+            if (count($rows) < 2) continue;
+            $names = [];
+            foreach ($rows as $row) $names[] = mb_strtolower((string) ($row['name'] ?? ''), 'UTF-8');
+            $team_counts = [];
+            foreach ($rows as $row) {
+                $team = trim((string) ($row['team'] ?? ''));
+                if ($team === '') continue;
+                $team_counts[$team] = ($team_counts[$team] ?? 0) + 1;
+            }
+            $wipe = false;
+            if ($team_counts) {
+                arsort($team_counts);
+                $top = (string) array_key_first($team_counts);
+                if ($top !== '' && $team_counts[$top] >= max(3, (int) ceil(count($rows) / 2)) && in_array(mb_strtolower($top, 'UTF-8'), $names, true)) {
+                    $wipe = true;
+                }
+            }
+            foreach ($rows as $ri => $row) {
+                $team = trim((string) ($row['team'] ?? ''));
+                $name = trim((string) ($row['name'] ?? ''));
+                if ($wipe || $team === '' || mb_strtolower($team, 'UTF-8') === mb_strtolower($name, 'UTF-8')) {
+                    $payload['statistics'][$gi]['rows'][$ri]['team'] = '';
+                }
+            }
+        }
+        return $payload;
     }
 
     private function standings_look_cloned(array $rows): bool {
