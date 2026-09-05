@@ -489,7 +489,10 @@ public function league_tabs($atts): string {
         $statistics = $data['statistics'] ?? [];
         $transfers = $data['transfers'] ?? [];
         $monthly = $data['monthly_best'] ?? [];
-        if (empty($monthly)) $monthly = F360LS_Repository::instance()->get_monthly_best();
+        if (empty($monthly) && method_exists(F360LS_Repository::instance(), 'get_monthly_best')) {
+            try { $monthly = F360LS_Repository::instance()->get_monthly_best(); }
+            catch (Throwable $e) { $monthly = []; }
+        }
         $live_weeks = $this->live_weeks($weeks, $matches);
         $subtitle = $this->display_subtitle((string) ($data['subtitle'] ?? ''));
         $has_any = !empty($matches) || !empty($standings) || !empty($top_scorers) || !empty($statistics) || !empty($transfers) || !empty($monthly);

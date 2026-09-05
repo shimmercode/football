@@ -178,11 +178,9 @@ class F360LS_Repository {
         $payload = $this->fill_league_statistics($payload, $league);
         $payload = $this->fill_league_transfers($payload, $league);
         $payload = $this->repair_payload($payload);
-        $payload['standings'] = $this->sanitize_standings($payload['standings'] ?? []);
-        if (empty($payload['league']['title']) || preg_match('/جدول لیگ|برنامه بازی|آمار رقابت|نقل و انتقال|فوتبال ۳۶۰/u', (string) ($payload['league']['title'] ?? ''))) {
+        if (empty($payload['league']['title']) || preg_match('/جدول لیگ|برنامه بازی|آمار رقابت|نقل و انتقال/u', (string) ($payload['league']['title'] ?? ''))) {
             if (!empty($payload['configured_title'])) $payload['league']['title'] = $payload['configured_title'];
         }
-        $payload['debug'] = $this->debug_snapshot($payload, $league);
 
         if (!$parsed_any) {
             $payload['message'] = 'منبع لیگ قابل خواندن نبود. اگر از لینک مستقیم استفاده می‌کنید، مطمئن شوید سرور شما به سایت مرجع دسترسی دارد.';
@@ -308,16 +306,15 @@ class F360LS_Repository {
         if ($f360_base) {
             $table_feed = $this->catalog_table_url($catalog, $table);
             if ($table_feed) $primary['table_url'] = $table_feed;
+            $primary['source_url'] = $f360_base;
             if (empty($primary['table_url'])) {
-                $primary['table_url'] = ($table && $this->is_football360_host($table) && !$this->is_generic_mixed_feed($table)) ? $table : '';
+                $primary['table_url'] = ($table && $this->is_football360_host($table) && !$this->is_generic_mixed_feed($table)) ? $table : $f360_base;
             }
+            $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
             $schedule = $this->catalog_matches_url($catalog, $games);
             $primary['games_url'] = $schedule ?: (($games && $this->is_football360_host($games) && !$this->is_generic_mixed_feed($games)) ? $games : ($f360_base . '/games'));
             $primary['statistics_url'] = $this->catalog_statistics_url($catalog, $statistics, $f360_base, 'players');
-            $primary['transfers_url'] = ($transfers && $this->is_football360_host($transfers)) ? $transfers : ($f360_base . '/transfers');
-            if (empty($primary['table_url']) && empty($primary['games_url'])) {
-                $primary['source_url'] = $f360_base;
-            }
+            $primary['statistics_teams_url'] = $this->catalog_statistics_url($catalog, '', $f360_base, 'teams');
         } else {
             foreach (['source_url' => $source, 'games_url' => $games, 'table_url' => $table, 'statistics_url' => $statistics, 'transfers_url' => $transfers] as $kind => $url) {
                 if ($url && $this->is_football360_host($url) && !$this->is_generic_mixed_feed($url)) $primary[$kind] = $url;
@@ -522,14 +519,14 @@ class F360LS_Repository {
         }
 
         if (!$stats_only && !$transfers_only && !empty($data['standings'])) {
-            $incoming = $this->sanitize_standings($data['standings']);
+            $incoming = $data['standings'];
             $incoming_ok = count($incoming) >= 2 && !$this->standings_look_cloned($incoming);
             $current_bad = empty($base['standings']) || $this->standings_look_cloned($base['standings'] ?? []);
             if ($table_feed && $incoming_ok) {
                 $base['standings'] = $this->dedupe_standings($incoming);
             } elseif ($current_bad && $incoming_ok) {
                 $base['standings'] = $this->dedupe_standings($incoming);
-            } elseif ($incoming_ok && !$table_feed) {
+            } else {
                 $base['standings'] = $this->dedupe_standings(array_merge($base['standings'] ?? [], $incoming));
             }
         }
@@ -943,103 +940,21 @@ class F360LS_Repository {
         return count(array_unique($sigs)) === 1;
     }
 
-    private function sanitize_standings(array $rows): array {
-        $out = [];
-        $seen = [];
-        foreach ($rows as $row) {
-            if (!is_array($row)) continue;
-            $team = trim((string) ($row['team'] ?? ''));
-            if ($team === '') continue;
-            $key = mb_strtolower($team, 'UTF-8');
-            if (isset($seen[$key])) continue;
-            $played = $this->standing_number($row['played'] ?? '');
-            $won = $this->standing_number($row['won'] ?? '');
-            $draw = $this->standing_number($row['draw'] ?? '');
-            $lost = $this->standing_number($row['lost'] ?? '');
-            $points = $this->standing_number($row['points'] ?? '');
-            if ($played !== '' && (int) $played < 0) continue;
-            if ($won !== '' && (int) $won < 0) continue;
-            if ($draw !== '' && (int) $draw < 0) continue;
-            if ($lost !== '' && (int) $lost < 0) continue;
-            if ($points !== '' && (int) $points < 0) continue;
-            $seen[$key] = true;
-            $out[] = $row;
-        }
-        if ($this->standings_look_cloned($out)) return [];
-        return $out;
-    }
-
-    private function standing_number($value): string {
-        $value = preg_replace('/\s+/', '', strtr((string) $value, ['۰'=>'0','۱'=>'1','۲'=>'2','۳'=>'3','۴'=>'4','۵'=>'5','۶'=>'6','۷'=>'7','۸'=>'8','۹'=>'9']));
-        return preg_match('/^-?\d+$/', $value) ? $value : '';
-    }
-
-    private function debug_snapshot(array $payload, array $league): array {
-        $settings = get_option(F360LS_OPTION_SETTINGS, []);
-        $on = is_array($settings) && (($settings['debug_mode'] ?? '0') === '1');
-        $snap = [
-            'league_id' => (string) ($league['id'] ?? ''),
-            'table_url' => (string) ($payload['table_url'] ?? ''),
-            'teams' => count($payload['standings'] ?? []),
-            'matches' => count($payload['matches'] ?? []),
-            'statistics_groups' => count($payload['statistics'] ?? []),
-            'transfers' => count($payload['transfers'] ?? []),
-            'monthly_best' => count($payload['monthly_best'] ?? []),
-            'cloned' => $this->standings_look_cloned($payload['standings'] ?? []),
-            'sources' => array_values(array_filter(array_map(function($s) { return $s['url'] ?? ''; }, $payload['sources'] ?? []))),
-        ];
-        if ($on && class_exists('F360LS_Logger')) {
-            F360LS_Logger::log('info', 'debug لیگ', $snap);
-        }
-        return $on ? $snap : [];
-    }
-
     private function fill_league_table(array $payload, array $league): array {
         $catalog = $this->catalog_by_id((string) ($league['id'] ?? ''));
         $url = $this->catalog_table_url($catalog, (string) ($league['table_url'] ?? ''));
-        $already = false;
-        foreach ($payload['sources'] ?? [] as $source) {
-            if (($source['kind'] ?? '') === 'table_url') $already = true;
-        }
-        if (!$url || $already) {
-            $payload['standings'] = $this->sanitize_standings($payload['standings'] ?? []);
-            return $payload;
-        }
+        if (!$url) return $payload;
+        $have = $payload['standings'] ?? [];
+        if (count($have) >= 3 && !$this->standings_look_cloned($have)) return $payload;
         $html = $this->fetch_url($url);
-        if (!$html) {
-            $payload['standings'] = $this->sanitize_standings($payload['standings'] ?? []);
-            return $payload;
-        }
+        if (!$html) return $payload;
         try {
             $data = (new F360LS_Parser($html))->parse();
         } catch (Throwable $e) {
             return $payload;
         }
-        $incoming = $this->sanitize_standings($data['standings'] ?? []);
-        if (count($incoming) >= 2 && !$this->standings_look_cloned($incoming)) {
-            $payload['standings'] = $this->dedupe_standings($incoming);
-            if (!empty($data['last_update'])) $payload['last_update'] = $data['last_update'];
-            $payload['sources'][] = ['type' => 'url', 'kind' => 'table_url', 'url' => $url, 'path' => ''];
-        } else {
-            $payload['standings'] = $this->sanitize_standings($payload['standings'] ?? []);
-        }
-        return $payload;
-    }
-
-    public function get_monthly_best(): array {
-        $cache_key = F360LS_CACHE_PREFIX . 'monthly_best';
-        $cached = get_transient($cache_key);
-        if (is_array($cached)) return $cached;
-        $html = $this->fetch_url('https://football360.ir/monthly-best');
-        if (!$html) return [];
-        try {
-            $rows = (new F360LS_Parser($html))->parse_monthly_best_public();
-        } catch (Throwable $e) {
-            return [];
-        }
-        if (!is_array($rows)) $rows = [];
-        set_transient($cache_key, $rows, 6 * HOUR_IN_SECONDS);
-        return $rows;
+        if (empty($data['standings']) || $this->standings_look_cloned($data['standings'])) return $payload;
+        return $this->merge_payloads($payload, $data, ['type' => 'url', 'kind' => 'table_url', 'url' => $url, 'path' => '']);
     }
 
 
@@ -1066,7 +981,7 @@ class F360LS_Repository {
             $url = esc_url_raw((string) ($item['url'] ?? ''));
             $key = strtolower(rtrim($url, '/'));
             if (!$url || isset($seen[$key])) continue;
-            if (strpos($key, 'footballi.net') !== false && count($payload['transfers'] ?? []) >= 8) continue;
+            if (strpos($key, 'footballi.net') !== false && count($payload['transfers'] ?? []) >= 200) continue;
             $html = $this->fetch_url($url);
             if (!$html) continue;
             try {
@@ -1150,6 +1065,25 @@ class F360LS_Repository {
         ], ['type' => 'url', 'kind' => 'live_results', 'url' => 'https://football360.ir/results', 'path' => '']);
     }
 
+    public function get_monthly_best(): array {
+        $cache_key = F360LS_CACHE_PREFIX . 'monthly_best';
+        $cached = get_transient($cache_key);
+        if (is_array($cached)) return $cached;
+        $html = $this->fetch_url('https://football360.ir/monthly-best');
+        if (!$html) {
+            set_transient($cache_key, [], 15 * MINUTE_IN_SECONDS);
+            return [];
+        }
+        try {
+            $rows = (new F360LS_Parser($html))->parse_monthly_best_public();
+        } catch (Throwable $e) {
+            $rows = [];
+        }
+        if (!is_array($rows)) $rows = [];
+        set_transient($cache_key, $rows, 6 * HOUR_IN_SECONDS);
+        return $rows;
+    }
+
     public function empty_payload(array $league, string $message = ''): array {
         return [
             'id' => $league['id'] ?? '',
@@ -1162,7 +1096,6 @@ class F360LS_Repository {
             'top_scorers' => [],
             'statistics' => [],
             'transfers' => [],
-            'monthly_best' => [],
             'news' => [],
             'last_update' => '',
             'description' => '',
