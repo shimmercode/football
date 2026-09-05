@@ -57,7 +57,8 @@ class F360LS_Parser {
         $payload = $this->make_payload($league, $weeks, $flat, $standings, $last_update, $description);
         $payload = $this->enrich_from_json($payload);
         if (!empty($payload['standings'])) $payload['standings'] = $this->renumber_standings($payload['standings']);
-        if (empty($payload['transfers'])) $payload['transfers'] = $this->parse_transfers($xpath);
+        $html_transfers = $this->merge_transfer_lists($this->parse_transfers($xpath), $this->regex_transfers($this->html));
+        if ($html_transfers) $payload['transfers'] = $this->merge_transfer_lists($payload['transfers'] ?? [], $html_transfers);
         if (empty($payload['statistics'])) $payload['statistics'] = $this->parse_statistics($xpath);
         if (empty($payload['statistics'])) $payload['statistics'] = $this->regex_statistics($this->html);
         if (empty($payload['top_scorers']) && !empty($payload['statistics'])) {
@@ -797,58 +798,153 @@ class F360LS_Parser {
         foreach ($nodes as $a) {
             if (!$a instanceof DOMElement) continue;
             $box = $a;
+            $picked = null;
+            $picked_text = '';
             for ($i = 0; $i < 8 && $box; $i++, $box = $box->parentNode) {
                 if (!$box instanceof DOMElement) continue;
+                $player_count = $xpath->query('.//a[contains(@href,"/player/")]', $box)->length;
+                if ($player_count !== 1) continue;
                 $text = $this->clean($box->textContent);
+                if (mb_strlen($text, 'UTF-8') > 420) continue;
                 $team_count = $xpath->query('.//a[contains(@href,"/team/")]', $box)->length;
-                if (!preg_match('/انتقال|قرضی|آزاد|قطعی/u', $text) && $team_count < 2) continue;
-                $player = $this->clean_team($this->clean($a->textContent) ?: $a->getAttribute('title'));
-                $img = $xpath->query('.//img', $a)->item(0);
-                $photo = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
-                if (!$player && $img instanceof DOMElement) $player = $this->clean_team($img->getAttribute('alt'));
-                $teams = [];
-                $logos = [];
-                foreach ($xpath->query('.//a[contains(@href,"/team/")]', $box) ?: [] as $teamNode) {
-                    if (!$teamNode instanceof DOMElement) continue;
-                    $name = $this->clean_team($teamNode->textContent);
-                    $tImg = $xpath->query('.//img', $teamNode)->item(0);
-                    if (!$name && $tImg instanceof DOMElement) $name = $this->clean_team($tImg->getAttribute('alt'));
-                    if ($name) {
-                        $teams[] = $name;
-                        $logos[] = ($tImg instanceof DOMElement) ? $this->normalize_src($this->image_src($tImg)) : '';
-                    }
-                }
-                if (!$player || count($teams) < 1) continue;
-                $type = 'انتقال';
-                if (preg_match('/انتقال آزاد|آزاد/u', $text)) $type = 'انتقال آزاد';
-                elseif (preg_match('/قرضی/u', $text)) $type = 'قرضی';
-                elseif (preg_match('/قطعی/u', $text)) $type = 'انتقال قطعی';
-                $when = '';
-                if (preg_match('/(\d+\s*(?:سال|ماه|هفته|روز|ساعت|دقیقه)\s*پیش)/u', $text, $tm)) $when = $tm[1];
-                $out[] = [
-                    'player' => $player,
-                    'photo' => $photo,
-                    'from' => $teams[0] ?? '',
-                    'from_logo' => $logos[0] ?? '',
-                    'to' => $teams[1] ?? '',
-                    'to_logo' => $logos[1] ?? '',
-                    'type' => $type,
-                    'date' => $when,
-                    'href' => $this->normalize_href($a->getAttribute('href')),
-                ];
+                if (!preg_match('/انتقال|قرضی|آزاد|قطعی/u', $text) && $team_count < 1) continue;
+                $picked = $box;
+                $picked_text = $text;
                 break;
             }
-            if (count($out) >= 120) break;
+            if (!$picked) continue;
+            $player = $this->clean_team($this->clean($a->textContent) ?: $a->getAttribute('title'));
+            $img = $xpath->query('.//img', $a)->item(0);
+            $photo = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
+            if (!$player && $img instanceof DOMElement) $player = $this->clean_team($img->getAttribute('alt'));
+            $player = $this->clean_team($player);
+            if (!$player || mb_strlen($player, 'UTF-8') > 60) continue;
+            $teams = [];
+            $logos = [];
+            foreach ($xpath->query('.//a[contains(@href,"/team/")]', $picked) ?: [] as $teamNode) {
+                if (!$teamNode instanceof DOMElement) continue;
+                $name = $this->clean_team($teamNode->textContent);
+                $tImg = $xpath->query('.//img', $teamNode)->item(0);
+                if (!$name && $tImg instanceof DOMElement) $name = $this->clean_team($tImg->getAttribute('alt'));
+                $name = $this->clean_team($name);
+                if ($name === '' || mb_strtolower($name, 'UTF-8') === mb_strtolower($player, 'UTF-8')) continue;
+                if (!in_array($name, $teams, true)) {
+                    $teams[] = $name;
+                    $logos[] = ($tImg instanceof DOMElement) ? $this->normalize_src($this->image_src($tImg)) : '';
+                }
+                if (count($teams) >= 2) break;
+            }
+            if (count($teams) < 1) {
+                foreach ($xpath->query('.//img[@alt]', $picked) ?: [] as $tImg) {
+                    if (!$tImg instanceof DOMElement) continue;
+                    $name = $this->clean_team($tImg->getAttribute('alt'));
+                    if ($name === '' || mb_strtolower($name, 'UTF-8') === mb_strtolower($player, 'UTF-8')) continue;
+                    if (!in_array($name, $teams, true)) {
+                        $teams[] = $name;
+                        $logos[] = $this->normalize_src($this->image_src($tImg));
+                    }
+                    if (count($teams) >= 2) break;
+                }
+            }
+            if (!$player || count($teams) < 1) continue;
+            $type = 'انتقال';
+            if (preg_match('/انتقال آزاد|آزاد/u', $picked_text)) $type = 'انتقال آزاد';
+            elseif (preg_match('/قرضی/u', $picked_text)) $type = 'قرضی';
+            elseif (preg_match('/قطعی/u', $picked_text)) $type = 'انتقال قطعی';
+            $when = '';
+            if (preg_match('/([0-9۰-۹]+\s*(?:سال|ماه|هفته|روز|ساعت|دقیقه)\s*پیش)/u', $picked_text, $tm)) $when = $tm[1];
+            $out[] = [
+                'player' => $player,
+                'photo' => $photo,
+                'from' => $teams[0] ?? '',
+                'from_logo' => $logos[0] ?? '',
+                'to' => $teams[1] ?? '',
+                'to_logo' => $logos[1] ?? '',
+                'type' => $type,
+                'date' => $when,
+                'href' => $this->normalize_href($a->getAttribute('href')),
+            ];
+            if (count($out) >= 400) break;
         }
+        return $this->merge_transfer_lists([], $out);
+    }
+
+    private function regex_transfers(string $html): array {
+        $out = [];
+        if (!preg_match_all('~<a[^>]+href=["\']([^"\']*/player/[^"\']+)["\'][^>]*>(.*?)</a>~isu', $html, $items, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
+            return [];
+        }
+        foreach ($items as $it) {
+            $pos = (int) $it[0][1];
+            $window = substr($html, $pos, 2200);
+            if (!preg_match('/انتقال|قرضی|آزاد|قطعی/u', $window)) continue;
+            $player = $this->strip($it[2][0]);
+            $photo = $this->normalize_src($this->regex_img($it[2][0]));
+            if (!$player && preg_match('/alt=["\']([^"\']+)["\']/', $it[2][0], $am)) $player = $this->clean_team($am[1]);
+            $player = $this->clean_team($player);
+            if (!$player || mb_strlen($player, 'UTF-8') > 60) continue;
+            $teams = [];
+            $logos = [];
+            if (preg_match_all('~<a[^>]+href=["\'][^"\']*/team/[^"\']+["\'][^>]*>(.*?)</a>~isu', $window, $tm)) {
+                foreach ($tm[1] as $tbody) {
+                    $name = $this->strip($tbody);
+                    $logo = $this->normalize_src($this->regex_img($tbody));
+                    if (!$name && preg_match('/alt=["\']([^"\']+)["\']/', $tbody, $am)) $name = $this->clean_team($am[1]);
+                    $name = $this->clean_team($name);
+                    if ($name === '' || mb_strtolower($name, 'UTF-8') === mb_strtolower($player, 'UTF-8')) continue;
+                    if (!in_array($name, $teams, true)) {
+                        $teams[] = $name;
+                        $logos[] = $logo;
+                    }
+                    if (count($teams) >= 2) break;
+                }
+            }
+            if (count($teams) < 1 && preg_match_all('/<img[^>]+alt=["\']([^"\']+)["\'][^>]*>/u', $window, $im)) {
+                foreach ($im[1] as $alt) {
+                    $name = $this->clean_team($alt);
+                    if ($name === '' || mb_strtolower($name, 'UTF-8') === mb_strtolower($player, 'UTF-8')) continue;
+                    if (preg_match('/missing|placeholder|default/i', $name)) continue;
+                    if (!in_array($name, $teams, true)) {
+                        $teams[] = $name;
+                        $logos[] = '';
+                    }
+                    if (count($teams) >= 2) break;
+                }
+            }
+            if (!$player || count($teams) < 1) continue;
+            $type = 'انتقال';
+            if (preg_match('/انتقال آزاد|آزاد/u', $window)) $type = 'انتقال آزاد';
+            elseif (preg_match('/قرضی/u', $window)) $type = 'قرضی';
+            elseif (preg_match('/قطعی/u', $window)) $type = 'انتقال قطعی';
+            $when = '';
+            if (preg_match('/([0-9۰-۹]+\s*(?:سال|ماه|هفته|روز|ساعت|دقیقه)\s*پیش)/u', $window, $tm2)) $when = $tm2[1];
+            $out[] = [
+                'player' => $player,
+                'photo' => $photo,
+                'from' => $teams[0] ?? '',
+                'from_logo' => $logos[0] ?? '',
+                'to' => $teams[1] ?? '',
+                'to_logo' => $logos[1] ?? '',
+                'type' => $type,
+                'date' => $when,
+                'href' => $this->normalize_href($it[1][0]),
+            ];
+            if (count($out) >= 400) break;
+        }
+        return $this->merge_transfer_lists([], $out);
+    }
+
+    private function merge_transfer_lists(array $old, array $new): array {
+        $out = [];
         $seen = [];
-        $clean = [];
-        foreach ($out as $row) {
-            $key = md5(($row['player'] ?? '') . '|' . ($row['from'] ?? '') . '|' . ($row['to'] ?? ''));
+        foreach (array_merge($old, $new) as $row) {
+            if (!is_array($row) || ($row['player'] ?? '') === '') continue;
+            $key = md5(mb_strtolower(trim(($row['player'] ?? '') . '|' . ($row['from'] ?? '') . '|' . ($row['to'] ?? '')), 'UTF-8'));
             if (isset($seen[$key])) continue;
             $seen[$key] = true;
-            $clean[] = $row;
+            $out[] = $row;
         }
-        return $clean;
+        return $out;
     }
 
     private function parse_statistics(DOMXPath $xpath): array {

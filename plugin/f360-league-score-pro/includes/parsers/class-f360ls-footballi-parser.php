@@ -55,6 +55,7 @@ class F360LS_Footballi_Parser {
             'standings' => $standings,
             'top_scorers' => $this->parse_top_scorers_from_dom(),
             'news' => $this->parse_news_from_dom(),
+            'transfers' => $this->parse_transfers_from_dom(),
             'last_update' => $this->last_update(),
             'description' => '',
             'stats' => [
@@ -561,6 +562,133 @@ class F360LS_Footballi_Parser {
         $matches = $this->dedupe_matches($matches);
         if (!$matches) return [];
         return [['title' => $this->default_matches_title(), 'matches' => array_map(function($m) { unset($m['_competition']); return $m; }, $matches)]];
+    }
+
+    private function parse_transfers_from_dom(): array {
+        $dom = $this->dom();
+        if (!$dom) return $this->parse_transfers_from_text();
+        $xpath = new DOMXPath($dom);
+        $out = [];
+        $seen = [];
+        foreach ($xpath->query('//a[contains(@href,"/player/")]') ?: [] as $a) {
+            if (!$a instanceof DOMElement) continue;
+            $box = $a;
+            $picked = null;
+            $picked_text = '';
+            for ($i = 0; $i < 8 && $box; $i++, $box = $box->parentNode) {
+                if (!$box instanceof DOMElement) continue;
+                $player_count = $xpath->query('.//a[contains(@href,"/player/")]', $box)->length;
+                if ($player_count !== 1) continue;
+                $text = $this->clean($box->textContent);
+                if (mb_strlen($text, 'UTF-8') > 360) continue;
+                if (!preg_match('/انتقال|قرضی|آزاد/u', $text)) continue;
+                $picked = $box;
+                $picked_text = $text;
+                break;
+            }
+            if (!$picked) continue;
+            $img = $xpath->query('.//img', $a)->item(0);
+            $player = $this->clean_team($this->node_text_tokens($a));
+            if (!$player && $img instanceof DOMElement) $player = $this->clean_team($img->getAttribute('alt'));
+            $player = $this->clean_team($player);
+            if (!$player || mb_strlen($player, 'UTF-8') > 60) continue;
+            $photo = ($img instanceof DOMElement) ? $this->normalize_src($this->image_src($img)) : '';
+            $teams = [];
+            $logos = [];
+            foreach ($xpath->query('.//a[contains(@href,"/team/")]', $picked) ?: [] as $teamNode) {
+                if (!$teamNode instanceof DOMElement) continue;
+                $name = $this->clean_team($this->node_text_tokens($teamNode));
+                $tImg = $xpath->query('.//img', $teamNode)->item(0);
+                if (!$name && $tImg instanceof DOMElement) $name = $this->clean_team($tImg->getAttribute('alt'));
+                $name = $this->clean_team($name);
+                if ($name === '' || mb_strtolower($name, 'UTF-8') === mb_strtolower($player, 'UTF-8')) continue;
+                if (!in_array($name, $teams, true)) {
+                    $teams[] = $name;
+                    $logos[] = ($tImg instanceof DOMElement) ? $this->normalize_src($this->image_src($tImg)) : '';
+                }
+                if (count($teams) >= 2) break;
+            }
+            if (count($teams) < 2) {
+                foreach ($xpath->query('.//img[@alt]', $picked) ?: [] as $tImg) {
+                    if (!$tImg instanceof DOMElement) continue;
+                    $name = $this->clean_team($tImg->getAttribute('alt'));
+                    if ($name === '' || mb_strtolower($name, 'UTF-8') === mb_strtolower($player, 'UTF-8')) continue;
+                    if (preg_match('/placeholder|default|icon/i', $name)) continue;
+                    if (!in_array($name, $teams, true)) {
+                        $teams[] = $name;
+                        $logos[] = $this->normalize_src($this->image_src($tImg));
+                    }
+                    if (count($teams) >= 2) break;
+                }
+            }
+            if (!$player || count($teams) < 1) continue;
+            $type = 'انتقال';
+            if (preg_match('/آزاد/u', $picked_text)) $type = 'انتقال آزاد';
+            elseif (preg_match('/قرضی/u', $picked_text)) $type = 'قرضی';
+            elseif (preg_match('/قطعی/u', $picked_text)) $type = 'انتقال قطعی';
+            $key = md5(mb_strtolower($player . '|' . ($teams[0] ?? '') . '|' . ($teams[1] ?? ''), 'UTF-8'));
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+            $out[] = [
+                'player' => $player,
+                'photo' => $photo,
+                'from' => $teams[0] ?? '',
+                'from_logo' => $logos[0] ?? '',
+                'to' => $teams[1] ?? '',
+                'to_logo' => $logos[1] ?? '',
+                'type' => $type,
+                'date' => '',
+                'href' => $this->normalize_href($a->getAttribute('href')),
+            ];
+            if (count($out) >= 400) break;
+        }
+        return $out ?: $this->parse_transfers_from_text();
+    }
+
+    private function parse_transfers_from_text(): array {
+        $out = [];
+        $seen = [];
+        if (!preg_match_all('~<a[^>]+href=["\']([^"\']*/player/[^"\']+)["\'][^>]*>(.*?)</a>~isu', $this->html, $items, PREG_SET_ORDER | PREG_OFFSET_CAPTURE)) {
+            return [];
+        }
+        foreach ($items as $it) {
+            $window = substr($this->html, (int) $it[0][1], 1800);
+            if (!preg_match('/انتقال|قرضی|آزاد/u', $window)) continue;
+            $player = $this->clean_team($this->clean(wp_strip_all_tags($it[2][0])));
+            if (!$player && preg_match('/alt=["\']([^"\']+)["\']/', $it[2][0], $am)) $player = $this->clean_team($am[1]);
+            if (!$player || mb_strlen($player, 'UTF-8') > 60) continue;
+            $teams = [];
+            if (preg_match_all('/<img[^>]+alt=["\']([^"\']+)["\'][^>]*>/u', $window, $im)) {
+                foreach ($im[1] as $alt) {
+                    $name = $this->clean_team($alt);
+                    if ($name === '' || mb_strtolower($name, 'UTF-8') === mb_strtolower($player, 'UTF-8')) continue;
+                    if (preg_match('/placeholder|default|icon/i', $name)) continue;
+                    if (!in_array($name, $teams, true)) $teams[] = $name;
+                    if (count($teams) >= 2) break;
+                }
+            }
+            if (!$player || count($teams) < 1) continue;
+            $type = 'انتقال';
+            if (preg_match('/آزاد/u', $window)) $type = 'انتقال آزاد';
+            elseif (preg_match('/قرضی/u', $window)) $type = 'قرضی';
+            elseif (preg_match('/قطعی/u', $window)) $type = 'انتقال قطعی';
+            $key = md5(mb_strtolower($player . '|' . ($teams[0] ?? '') . '|' . ($teams[1] ?? ''), 'UTF-8'));
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+            $out[] = [
+                'player' => $player,
+                'photo' => '',
+                'from' => $teams[0] ?? '',
+                'from_logo' => '',
+                'to' => $teams[1] ?? '',
+                'to_logo' => '',
+                'type' => $type,
+                'date' => '',
+                'href' => $this->normalize_href($it[1][0]),
+            ];
+            if (count($out) >= 400) break;
+        }
+        return $out;
     }
 
     private function parse_news_from_dom(): array {

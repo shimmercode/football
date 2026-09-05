@@ -3098,6 +3098,9 @@
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
+  pointer-events: auto;
+  position: relative;
+  z-index: 3;
 }
 .f360ls-pager-nav button.is-active {
   background: var(--text);

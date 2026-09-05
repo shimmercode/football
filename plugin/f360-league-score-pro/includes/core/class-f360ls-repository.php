@@ -176,6 +176,7 @@ class F360LS_Repository {
         }
         $payload = $this->fill_league_table($payload, $league);
         $payload = $this->fill_league_statistics($payload, $league);
+        $payload = $this->fill_league_transfers($payload, $league);
         $payload = $this->repair_payload($payload);
 
         if (!$parsed_any) {
@@ -498,8 +499,10 @@ class F360LS_Repository {
             || (bool) preg_match('~/statistics(?:/players|/teams)?(?:[?#].*)?$~i', (string) ($source['url'] ?? ''));
         $table_feed = (($source['kind'] ?? '') === 'table_url')
             || (bool) preg_match('~/league/table~i', (string) ($source['url'] ?? ''));
+        $transfers_only = (bool) preg_match('/transfer/i', (string) ($source['kind'] ?? ''))
+            || (bool) preg_match('~/transfers?(?:[?#].*)?$~i', (string) ($source['url'] ?? ''));
 
-        if (!$stats_only && !$table_feed && !empty($data['league']['title']) && (empty($base['league']['title']) || $source['kind'] !== 'derived_games_url')) {
+        if (!$stats_only && !$table_feed && !$transfers_only && !empty($data['league']['title']) && (empty($base['league']['title']) || $source['kind'] !== 'derived_games_url')) {
             $base['league']['title'] = $data['league']['title'];
         }
         if (!empty($data['league']['logo']) && (empty($base['league']['logo']) || ($from_f360 && $this->is_football360_logo($data['league']['logo'])))) {
@@ -512,7 +515,7 @@ class F360LS_Repository {
             $base['description'] = $data['description'];
         }
 
-        if (!$stats_only && !empty($data['standings'])) {
+        if (!$stats_only && !$transfers_only && !empty($data['standings'])) {
             $incoming = $data['standings'];
             $incoming_ok = count($incoming) >= 2 && !$this->standings_look_cloned($incoming);
             $current_bad = empty($base['standings']) || $this->standings_look_cloned($base['standings'] ?? []);
@@ -524,13 +527,13 @@ class F360LS_Repository {
                 $base['standings'] = $this->dedupe_standings(array_merge($base['standings'] ?? [], $incoming));
             }
         }
-        if (!$stats_only && !$table_feed && !empty($data['matches'])) {
+        if (!$stats_only && !$table_feed && !$transfers_only && !empty($data['matches'])) {
             $base['matches'] = $this->dedupe_matches(array_merge($base['matches'] ?? [], $data['matches']));
         }
-        if (!$stats_only && !$table_feed && !empty($data['weeks'])) {
+        if (!$stats_only && !$table_feed && !$transfers_only && !empty($data['weeks'])) {
             $base['weeks'] = $this->merge_weeks($base['weeks'] ?? [], $data['weeks']);
         }
-        if (!$stats_only && !$table_feed && !empty($data['news'])) {
+        if (!$stats_only && !$table_feed && !$transfers_only && !empty($data['news'])) {
             $base['news'] = $this->dedupe_items(array_merge($base['news'] ?? [], $data['news']), ['href','title']);
         }
         if (!empty($data['top_scorers'])) {
@@ -540,7 +543,7 @@ class F360LS_Repository {
             $base['statistics'] = $this->merge_statistics($base['statistics'] ?? [], $data['statistics']);
         }
         if (!$stats_only && !$table_feed && !empty($data['transfers'])) {
-            $base['transfers'] = $this->dedupe_items(array_merge($base['transfers'] ?? [], $data['transfers']), ['player','from','to','type']);
+            $base['transfers'] = $this->dedupe_items(array_merge($base['transfers'] ?? [], $data['transfers']), ['player','from','to']);
         }
 
         $base['sources'][] = [
@@ -949,6 +952,46 @@ class F360LS_Repository {
         }
         if (empty($data['standings']) || $this->standings_look_cloned($data['standings'])) return $payload;
         return $this->merge_payloads($payload, $data, ['type' => 'url', 'kind' => 'table_url', 'url' => $url, 'path' => '']);
+    }
+
+
+    private function fill_league_transfers(array $payload, array $league): array {
+        $seen = [];
+        foreach ($payload['sources'] ?? [] as $source) {
+            $url = strtolower(rtrim((string) ($source['url'] ?? ''), '/'));
+            if ($url !== '') $seen[$url] = true;
+        }
+        $catalog = $this->catalog_by_id((string) ($league['id'] ?? ''));
+        $urls = [];
+        $base = $this->football360_base((string) ($catalog['url'] ?? ($league['source_url'] ?? '')));
+        if ($base) $urls[] = ['url' => rtrim($base, '/') . '/transfers', 'kind' => 'transfers_url'];
+        $configured = esc_url_raw((string) ($league['transfers_url'] ?? ''));
+        if ($configured && $this->is_football360_host($configured) && !$this->is_generic_mixed_feed($configured)) {
+            $urls[] = ['url' => $configured, 'kind' => 'transfers_url'];
+        }
+        $fallback = esc_url_raw((string) ($league['fallback_url'] ?? ''));
+        if (!$fallback && !empty($catalog['fallback'])) $fallback = esc_url_raw((string) $catalog['fallback']);
+        if ($fallback && $this->is_footballi_host($fallback)) {
+            $urls[] = ['url' => rtrim($fallback, '/') . '/transfer', 'kind' => 'fallback_transfers'];
+        }
+        foreach ($urls as $item) {
+            $url = esc_url_raw((string) ($item['url'] ?? ''));
+            $key = strtolower(rtrim($url, '/'));
+            if (!$url || isset($seen[$key])) continue;
+            if (strpos($key, 'footballi.net') !== false && count($payload['transfers'] ?? []) >= 200) continue;
+            $html = $this->fetch_url($url);
+            if (!$html) continue;
+            try {
+                $use_footballi = class_exists('F360LS_Footballi_Parser') && F360LS_Footballi_Parser::looks_like($html, ['url' => $url]);
+                $data = $use_footballi ? (new F360LS_Footballi_Parser($html, ['url' => $url]))->parse($league) : (new F360LS_Parser($html))->parse();
+            } catch (Throwable $e) {
+                continue;
+            }
+            if (empty($data['transfers'])) continue;
+            $payload = $this->merge_payloads($payload, $data, ['type' => 'url', 'kind' => $item['kind'], 'url' => $url, 'path' => '']);
+            $seen[$key] = true;
+        }
+        return $payload;
     }
 
     private function fill_league_statistics(array $payload, array $league): array {
